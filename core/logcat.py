@@ -25,8 +25,10 @@ class LogcatManager:
         self.adb_path = self._get_adb_path()
         self.all_packages = []
         self.current_pid = None
-        self.is_fullscreen = False
         self.current_screen = 0
+        self.monitoring_stats = False
+        self.stats_process = None
+        self.estadisticas_preguntadas = False
 
     def _get_adb_path(self):
         """Obtener la ruta de ADB desde la configuración"""
@@ -120,7 +122,7 @@ class LogcatManager:
     def mostrar_logcat(self):
         """Mostrar ventana de Logcat"""
         self.logcat_window = tk.Toplevel(self.root)
-        self.logcat_window.title("Logcat")
+        self.logcat_window.title("Logcat - Monitor de Dispositivos Android")
         
         # Configuración de ventana mejorada
         self.logcat_window.geometry("1400x850")
@@ -131,14 +133,12 @@ class LogcatManager:
         
         self.logcat_window.configure(bg=self.styles.COLORS['primary_bg'])
         self._posicionar_ventana_inteligente()
-        self.logcat_window.bind("<F11>", self._toggle_pantalla_completa)
-        self.logcat_window.bind("<Escape>", self._salir_pantalla_completa)
         self.logcat_window.bind("<Control-s>", lambda e: self._guardar_log())
         self.logcat_window.bind("<Control-l>", lambda e: self._limpiar_logcat())
         self.logcat_window.bind("<Control-f>", lambda e: self.package_combo.focus())
         
         self._crear_ui_logcat_mejorada()
-        self._verificar_dispositivo()
+        self._verificar_y_cargar_automaticamente()
 
     def _detectar_pantalla_actual(self):
         """Detectar en qué pantalla está la ventana principal"""
@@ -188,33 +188,6 @@ class LogcatManager:
             self.logger.log_warning(f"No se pudo posicionar ventana inteligente: {e}")
             self.logcat_window.geometry("1400x850")
 
-    def _toggle_pantalla_completa(self, event=None):
-        """Alternar modo pantalla completa - MEJORADO para múltiples pantallas"""
-        self.is_fullscreen = not self.is_fullscreen
-        self.logcat_window.attributes("-fullscreen", self.is_fullscreen)
-        
-        if self.is_fullscreen:
-            self.btn_pantalla_completa.config(
-                text="⛶ Salir Pantalla Completa",
-                bg="#ff5722",
-                fg="white"
-            )
-            # Asegurarse de que está en la pantalla correcta
-            if self.current_screen == 1:
-                self.logcat_window.geometry(f"{self.logcat_window.winfo_screenwidth()}x{self.logcat_window.winfo_screenheight()}+0+0")
-        else:
-            self.btn_pantalla_completa.config(
-                text="⛶ Pantalla Completa", 
-                bg="#9c27b0",
-                fg="white"
-            )
-            self._posicionar_ventana_inteligente()
-
-    def _salir_pantalla_completa(self, event=None):
-        """Salir del modo pantalla completa"""
-        if self.is_fullscreen:
-            self._toggle_pantalla_completa()
-
     def _crear_ui_logcat_mejorada(self):
         """Crear interfaz de usuario MEJORADA para Logcat"""
         # Frame principal con mejor diseño
@@ -228,7 +201,7 @@ class LogcatManager:
         # Título principal
         title_label = tk.Label(
             header_frame,
-            text="🐱 LOGCAT",
+            text="🐱 LOGCAT - MONITOR DE APLICACIONES",
             font=("Segoe UI", 16, "bold"),
             bg=self.styles.COLORS['primary_bg'],
             fg=self.styles.COLORS['accent'],
@@ -249,7 +222,7 @@ class LogcatManager:
         self.adb_info_label.pack(side="right", padx=(0, 10))
         self.adb_info_label.bind("<Button-1>", self._mostrar_info_adb)
 
-        # Panel de control principal - DISEÑO MEJORADO
+        # Panel de control principal
         control_frame = tk.Frame(main_frame, bg=self.styles.COLORS['secondary_bg'], relief="raised", bd=1)
         control_frame.pack(fill="x", pady=(0, 15))
 
@@ -278,7 +251,7 @@ class LogcatManager:
             combo_frame,
             textvariable=self.package_var,
             font=("Segoe UI", 10),
-            height=8,  # Altura del dropdown
+            height=8,
             values=self.all_packages
         )
         self.package_combo.pack(side="left", fill="x", expand=True, padx=(0, 10))
@@ -286,32 +259,25 @@ class LogcatManager:
         # ✅ AUTOMATIZACIÓN MEJORADA - Sin bloqueos de escritura
         self.package_combo.bind('<KeyRelease>', self._autocompletar_package_mejorado)
         self.package_combo.bind('<<ComboboxSelected>>', self._on_package_selected)
-        self.package_combo.bind('<Return>', lambda e: self._aplicar_filtro_package())
+        self.package_combo.bind('<Return>', lambda e: self._aplicar_filtro_automatico())
         self.package_combo.bind('<FocusIn>', lambda e: self.package_combo.selection_range(0, tk.END))
 
         # Botones de acción para packages
         btn_package_frame = tk.Frame(combo_frame, bg=self.styles.COLORS['secondary_bg'])
         btn_package_frame.pack(side="left", padx=(5, 0))
 
-        self.btn_cargar_packages = self._crear_boton_moderno(
+        # ✅ NUEVO: Botón para estadísticas de la app
+        self.btn_estadisticas = self._crear_boton_moderno(
             btn_package_frame,
-            "📦 Cargar Packages",
-            self._cargar_packages_dispositivo,
-            "#2196f3"
+            "📊 Estadísticas App",
+            lambda: self._mostrar_estadisticas_app(self.package_var.get()) if self.package_var.get() else messagebox.showwarning("Advertencia", "Selecciona un package primero"),
+            "#9c27b0"
         )
-        self.btn_cargar_packages.pack(side="left", padx=(0, 5))
-
-        self.btn_aplicar_filtro = self._crear_boton_moderno(
-            btn_package_frame,
-            "🎯 Aplicar Filtro",
-            self._aplicar_filtro_package,
-            "#17a2b8"
-        )
-        self.btn_aplicar_filtro.pack(side="left", padx=(0, 5))
+        self.btn_estadisticas.pack(side="left", padx=(0, 5))
 
         self.btn_limpiar_filtro = self._crear_boton_moderno(
             btn_package_frame,
-            "🗑️ Limpiar",
+            "🗑️ Limpiar Filtro",
             self._limpiar_filtro,
             "#6c757d"
         )
@@ -358,7 +324,7 @@ class LogcatManager:
         )
         self.btn_todos_logs.pack(side="left", padx=(0, 8))
 
-        # Grupo derecho: Utilidades (con pantalla completa a la derecha)
+        # Grupo derecho: Utilidades
         right_btn_frame = tk.Frame(control_btn_frame, bg=self.styles.COLORS['secondary_bg'])
         right_btn_frame.pack(side="right")
 
@@ -369,15 +335,6 @@ class LogcatManager:
             "#17a2b8"
         )
         self.btn_guardar.pack(side="left", padx=(0, 8))
-
-        # ✅ PANTALLA COMPLETA A LA DERECHA DEL TODO
-        self.btn_pantalla_completa = self._crear_boton_moderno(
-            right_btn_frame,
-            "⛶ Pantalla Completa",
-            self._toggle_pantalla_completa,
-            "#9c27b0"
-        )
-        self.btn_pantalla_completa.pack(side="left")
 
         # Panel de información en tiempo real
         info_frame = tk.Frame(control_frame, bg=self.styles.COLORS['secondary_bg'])
@@ -505,7 +462,7 @@ class LogcatManager:
         # Atajos de teclado
         shortcuts_label = tk.Label(
             status_info_frame,
-            text="⌨️ F11: Pantalla Completa | Ctrl+S: Guardar | Ctrl+L: Limpiar",
+            text="⌨️ Ctrl+S: Guardar | Ctrl+L: Limpiar | Ctrl+F: Buscar",
             font=("Segoe UI", 8),
             bg="#2d2d2d",
             fg="#888888"
@@ -523,6 +480,79 @@ class LogcatManager:
             'FATAL': 0,
             'VERBOSE': 0
         }
+
+    def _verificar_y_cargar_automaticamente(self):
+        """Verificar dispositivo y cargar packages automáticamente"""
+        def proceso_automatico():
+            # Primero verificar dispositivo
+            result = self._ejecutar_adb("devices")
+            if result and result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                devices = []
+                for line in lines[1:]:
+                    if line.strip() and '\tdevice' in line:
+                        device_id = line.split('\t')[0]
+                        devices.append({'device': device_id, 'model': 'Dispositivo Android'})
+                
+                if devices:
+                    # Actualizar estado del dispositivo
+                    device_info = devices[0]
+                    self.root.after(0, lambda: self.status_label.config(
+                        text=f"✅ Dispositivo conectado: {device_info['device']} - Cargando packages...",
+                        fg="#4caf50"
+                    ))
+                    
+                    # Cargar packages automáticamente
+                    self._cargar_packages_automatico()
+                else:
+                    self.root.after(0, lambda: self.status_label.config(
+                        text="❌ No hay dispositivos Android conectados",
+                        fg="#f44336"
+                    ))
+            else:
+                self.root.after(0, lambda: self.status_label.config(
+                    text="❌ Error conectando con ADB",
+                    fg="#f44336"
+                ))
+
+        threading.Thread(target=proceso_automatico, daemon=True).start()
+
+    def _cargar_packages_automatico(self):
+        """Cargar packages automáticamente"""
+        def cargar_packages():
+            result = self._ejecutar_adb("shell pm list packages")
+            
+            if result and result.returncode == 0:
+                packages = []
+                for line in result.stdout.split('\n'):
+                    if line.startswith('package:'):
+                        package_name = line.replace('package:', '').strip()
+                        if package_name:
+                            packages.append(package_name)
+                
+                packages.sort()
+                self.all_packages = packages
+                
+                self.root.after(0, self._actualizar_packages_ui, packages)
+            else:
+                error_msg = "No se pudieron cargar los packages automáticamente"
+                self.root.after(0, lambda: self.status_label.config(
+                    text=f"⚠️ {error_msg}",
+                    fg="#ff9800"
+                ))
+
+        threading.Thread(target=cargar_packages, daemon=True).start()
+
+    def _actualizar_packages_ui(self, packages):
+        """Actualizar la UI con la lista de packages"""
+        self.package_combo['values'] = packages
+        self.status_label.config(
+            text=f"✅ {len(packages)} packages cargados - Selecciona o escribe para filtrar",
+            fg="#4caf50"
+        )
+        
+        # Detectar package del APK automáticamente
+        self._detectar_package_apk_inteligente()
 
     def _crear_boton_moderno(self, parent, texto, comando, color, state="normal"):
         """Crear botón con diseño moderno"""
@@ -580,7 +610,7 @@ class LogcatManager:
         self.logcat_text.tag_configure("TIMESTAMP", foreground="#569cd6")  # Azul para timestamps
 
     def _autocompletar_package_mejorado(self, event):
-        """Autocompletado MEJORADO - Sin bloquear la escritura"""
+        """Autocompletado MEJORADO - Permite escribir siempre sin importar coincidencias"""
         # Ignorar teclas de navegación y control
         if event.keysym in ['Return', 'Escape', 'Up', 'Down', 'Control_L', 'Control_R']:
             return
@@ -588,29 +618,21 @@ class LogcatManager:
         current_text = self.package_var.get()
         
         if not current_text:
-            self.package_combo['values'] = self.all_packages[:50]  # Mostrar solo primeros 50
+            # Si no hay texto, mostrar todos los packages
+            self.package_combo['values'] = self.all_packages
             return
         
-        # ✅ MEJORADO: Búsqueda inteligente sin bloquear escritura
-        filtered = []
+        # ✅ MEJORADO: Búsqueda que no interfiere con la escritura
         current_lower = current_text.lower()
         
-        # Priorizar coincidencias que empiecen con el texto
-        starts_with = [pkg for pkg in self.all_packages if pkg.lower().startswith(current_lower)]
-        
-        # Luego coincidencias que contengan el texto
-        contains = [pkg for pkg in self.all_packages if current_lower in pkg.lower() and pkg not in starts_with]
-        
-        filtered = starts_with + contains
-        
-        # Limitar a 30 resultados para mejor rendimiento
-        filtered = filtered[:30]
+        # Filtrar packages que contengan el texto
+        filtered = [pkg for pkg in self.all_packages if current_lower in pkg.lower()]
         
         # Actualizar valores del combobox SIN interferir con la escritura
         self.package_combo['values'] = filtered
         
-        # Solo mostrar dropdown si hay coincidencias y el usuario está escribiendo
-        if filtered and len(current_text) > 1:
+        # Solo mostrar dropdown si hay coincidencias
+        if filtered:
             # Pequeño delay para no ser intrusivo
             self.logcat_window.after(100, lambda: self.package_combo.event_generate('<Down>'))
 
@@ -620,98 +642,52 @@ class LogcatManager:
             "Información ADB",
             f"Ruta ADB actual: {self.adb_path}\n\n"
             "Atajos de teclado:\n"
-            "• F11: Pantalla completa\n"
-            "• ESC: Salir pantalla completa\n"
             "• Ctrl+S: Guardar log\n"
             "• Ctrl+L: Limpiar pantalla\n"
             "• Ctrl+F: Enfocar búsqueda\n\n"
+            "Funcionalidades automáticas:\n"
+            "• Carga automática de packages al iniciar\n"
+            "• Filtro automático al seleccionar package\n"
+            "• Detección automática de dispositivo\n\n"
             "Si ADB no funciona:\n"
             "1. Ve a 'Configurar Herramientas'\n"
             "2. Establece la ruta correcta a adb.exe"
         )
 
-    def _verificar_dispositivo(self):
-        """Verificar si hay dispositivos conectados"""
-        def verificar():
-            result = self._ejecutar_adb("devices")
-            if result and result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
-                devices = []
-                for line in lines[1:]:
-                    if line.strip() and '\tdevice' in line:
-                        device_id = line.split('\t')[0]
-                        devices.append({'device': device_id, 'model': 'Dispositivo Android'})
-                
-                self.root.after(0, self._actualizar_estado_dispositivo, devices)
-            else:
-                error_msg = "No se pudo ejecutar ADB. Verifica la configuración."
-                if result and result.stderr:
-                    error_msg += f"\nError: {result.stderr}"
-                self.root.after(0, self._mostrar_error_estado, error_msg)
+    def _on_package_selected(self, event):
+        """Cuando se selecciona un package del combobox - APLICACIÓN AUTOMÁTICA"""
+        package = self.package_var.get()
+        if package:
+            # Aplicar filtro automáticamente
+            self._aplicar_filtro_automatico()
 
-        threading.Thread(target=verificar, daemon=True).start()
-
-    def _actualizar_estado_dispositivo(self, devices):
-        """Actualizar estado del dispositivo en la UI"""
-        if devices:
-            device_info = devices[0]
+    def _aplicar_filtro_automatico(self):
+        """Aplicar filtro automáticamente cuando se selecciona o escribe un package"""
+        package = self.package_var.get().strip()
+        if not package:
+            return
+        
+        self.current_filter = package
+        self.filter_info_label.config(text=f"🎯 Filtro: {package}")
+        
+        # Obtener PID automáticamente
+        pid = self._obtener_pid_package(package)
+        if pid:
+            self.pid_info_label.config(text=f"📊 PID: {pid}")
             self.status_label.config(
-                text=f"✅ Dispositivo conectado: {device_info['device']}",
+                text=f"✅ Filtro aplicado automáticamente: {package} (PID: {pid})",
                 fg="#4caf50"
             )
-            self.monitoring_status.config(text="🟢 Monitoreo: LISTO", fg="#4caf50")
+            
+            # ✅ NUEVO: Preguntar si quiere ver estadísticas
+            self.root.after(1000, lambda: self._preguntar_estadisticas(package))
+            
         else:
+            self.pid_info_label.config(text="📊 PID: No ejecutándose")
             self.status_label.config(
-                text="❌ No hay dispositivos Android conectados",
-                fg="#f44336"
-            )
-            self.monitoring_status.config(text="🔴 Monitoreo: SIN DISPOSITIVO", fg="#f44336")
-
-    def _mostrar_error_estado(self, error_msg):
-        """Mostrar error en el estado"""
-        self.status_label.config(text=f"❌ {error_msg}", fg="#f44336")
-        self.monitoring_status.config(text="🔴 Monitoreo: ERROR ADB", fg="#f44336")
-
-    def _cargar_packages_dispositivo(self):
-        """Cargar todos los packages instalados en el dispositivo"""
-        def cargar_packages():
-            self.root.after(0, lambda: self.status_label.config(
-                text="📦 Cargando packages del dispositivo...", 
+                text=f"⚠️ Filtro aplicado automáticamente: {package} - App no ejecutándose",
                 fg="#ff9800"
-            ))
-            
-            result = self._ejecutar_adb("shell pm list packages")
-            
-            if result and result.returncode == 0:
-                packages = []
-                for line in result.stdout.split('\n'):
-                    if line.startswith('package:'):
-                        package_name = line.replace('package:', '').strip()
-                        if package_name:
-                            packages.append(package_name)
-                
-                packages.sort()
-                self.all_packages = packages
-                
-                self.root.after(0, self._actualizar_packages_ui, packages)
-            else:
-                error_msg = "No se pudieron cargar los packages"
-                if result and result.stderr:
-                    error_msg += f"\nError: {result.stderr}"
-                self.root.after(0, self._mostrar_error_estado, error_msg)
-
-        threading.Thread(target=cargar_packages, daemon=True).start()
-
-    def _actualizar_packages_ui(self, packages):
-        """Actualizar la UI con la lista de packages"""
-        self.package_combo['values'] = packages[:50]  # Mostrar primeros 50 por defecto
-        self.status_label.config(
-            text=f"✅ {len(packages)} packages cargados - Escribe para buscar",
-            fg="#4caf50"
-        )
-        
-        # Detectar package del APK automáticamente
-        self._detectar_package_apk_inteligente()
+            )
 
     def _detectar_package_apk_inteligente(self):
         """Detección MEJORADA del package name del APK analizado"""
@@ -749,84 +725,31 @@ class LogcatManager:
                     self.package_var.set(package_name)
                     self.package_combo.set(package_name)
                     
-                    # Obtener PID
-                    pid = self._obtener_pid_package(package_name)
-                    status_text = f"✅ Package detectado: {package_name}"
+                    # Aplicar filtro automáticamente
+                    self.root.after(500, lambda: self._aplicar_filtro_automatico())
                     
-                    if pid:
-                        status_text += f" (PID: {pid}) - Listo para iniciar Logcat"
-                        self.pid_info_label.config(text=f"📊 PID: {pid}")
-                    else:
-                        status_text += " - App no está ejecutándose"
-                        self.pid_info_label.config(text="📊 PID: No ejecutándose")
-                    
-                    self.status_label.config(text=status_text, fg="#4caf50")
-                    
-                else:
-                    self.status_label.config(
-                        text=f"⚠️ Package '{package_name}' no encontrado en el dispositivo",
-                        fg="#ff9800"
-                    )
-                    self.pid_info_label.config(text="📊 PID: No instalado")
-            else:
-                self.status_label.config(
-                    text="ℹ️ No hay APK analizado o no se detectó package. Usa autocompletado ↑",
-                    fg="#17a2b8"
-                )
-            
         except Exception as e:
             self.logger.log_error("Error detectando package automático", e)
-            self.status_label.config(
-                text="❌ Error detectando package. Usa búsqueda manual ↑",
-                fg="#f44336"
-            )
 
-    def _on_package_selected(self, event):
-        """Cuando se selecciona un package del combobox"""
-        package = self.package_var.get()
-        if package:
-            self.current_filter = package
-            self.filter_info_label.config(text=f"🎯 Filtro: {package}")
-            
-            # Obtener PID del package seleccionado
-            pid = self._obtener_pid_package(package)
-            if pid:
-                self.pid_info_label.config(text=f"📊 PID: {pid}")
-                self.status_label.config(
-                    text=f"✅ Filtro aplicado: {package} (PID: {pid})",
-                    fg="#4caf50"
-                )
-            else:
-                self.pid_info_label.config(text="📊 PID: No ejecutándose")
-                self.status_label.config(
-                    text=f"⚠️ Filtro aplicado: {package} - App no ejecutándose",
-                    fg="#ff9800"
-                )
-
-    def _aplicar_filtro_package(self):
-        """Aplicar filtro por package"""
-        package = self.package_var.get().strip()
-        if not package:
-            messagebox.showwarning("Advertencia", "Por favor, ingresa un package name")
+    def _preguntar_estadisticas(self, package_name):
+        """Preguntar al usuario si quiere ver estadísticas de la app"""
+        if hasattr(self, 'estadisticas_preguntadas') and self.estadisticas_preguntadas:
             return
+            
+        self.estadisticas_preguntadas = True
         
-        self.current_filter = package
-        self.filter_info_label.config(text=f"🎯 Filtro: {package}")
+        respuesta = messagebox.askyesno(
+            "Estadísticas de la Aplicación",
+            f"¿Te gustaría ver las estadísticas de rendimiento de '{package_name}'?\n\n"
+            "Esto abrirá la aplicación en el dispositivo y mostrará:\n"
+            "• Uso de memoria (RAM)\n"
+            "• Uso de CPU\n"
+            "• Consumo de datos\n"
+            "• Información general de rendimiento"
+        )
         
-        # Obtener PID
-        pid = self._obtener_pid_package(package)
-        if pid:
-            self.pid_info_label.config(text=f"📊 PID: {pid}")
-            self.status_label.config(
-                text=f"✅ Filtro aplicado: {package} (PID: {pid})",
-                fg="#4caf50"
-            )
-        else:
-            self.pid_info_label.config(text="📊 PID: No ejecutándose")
-            self.status_label.config(
-                text=f"⚠️ Filtro aplicado: {package} - App no ejecutándose",
-                fg="#ff9800"
-            )
+        if respuesta:
+            self._mostrar_estadisticas_app(package_name)
 
     def _limpiar_filtro(self):
         """Limpiar filtro actual"""
@@ -1052,3 +975,321 @@ class LogcatManager:
         """Establecer referencia al config manager"""
         self.config_manager = config_manager
         self.adb_path = self._get_adb_path()
+
+    # Los métodos de estadísticas que ya estaban implementados
+    def _abrir_app_en_dispositivo(self, package_name):
+        """Abrir la aplicación en el dispositivo"""
+        try:
+            result = self._ejecutar_adb(f"shell monkey -p {package_name} -c android.intent.category.LAUNCHER 1")
+            if result and result.returncode == 0:
+                return True, f"✅ Aplicación {package_name} abierta en el dispositivo"
+            else:
+                return False, f"❌ No se pudo abrir la aplicación {package_name}"
+        except Exception as e:
+            return False, f"❌ Error abriendo aplicación: {str(e)}"
+
+    def _obtener_estadisticas_app(self, package_name):
+        """Obtener estadísticas de memoria y datos de la aplicación"""
+        try:
+            stats = {}
+            
+            # Obtener uso de memoria
+            result = self._ejecutar_adb(f"shell dumpsys meminfo {package_name}")
+            if result and result.returncode == 0:
+                memoria_info = self._parsear_memoria(result.stdout)
+                stats.update(memoria_info)
+            
+            # Obtener uso de datos
+            result = self._ejecutar_adb(f"shell dumpsys package {package_name} | grep -A 20 'Data stats:'")
+            if result and result.returncode == 0:
+                datos_info = self._parsear_datos(result.stdout)
+                stats.update(datos_info)
+            
+            # Obtener información de CPU
+            pid = self._obtener_pid_package(package_name)
+            if pid:
+                result = self._ejecutar_adb(f"shell top -n 1 -p {pid}")
+                if result and result.returncode == 0:
+                    cpu_info = self._parsear_cpu(result.stdout, package_name)
+                    stats.update(cpu_info)
+            
+            return True, stats
+            
+        except Exception as e:
+            return False, f"❌ Error obteniendo estadísticas: {str(e)}"
+
+    def _parsear_memoria(self, output):
+        """Parsear información de memoria del output de dumpsys meminfo"""
+        memoria = {}
+        try:
+            # Buscar líneas con información de memoria
+            lines = output.split('\n')
+            for line in lines:
+                if 'TOTAL' in line and 'PSS:' in line:
+                    # Extraer PSS (Proportional Set Size)
+                    pss_match = re.search(r'PSS:\s+(\d+)', line)
+                    if pss_match:
+                        memoria['pss_kb'] = int(pss_match.group(1))
+                        memoria['pss_mb'] = round(int(pss_match.group(1)) / 1024, 2)
+                
+                elif 'Java Heap:' in line:
+                    heap_match = re.search(r'Java Heap:\s+(\d+)', line)
+                    if heap_match:
+                        memoria['java_heap_kb'] = int(heap_match.group(1))
+                        memoria['java_heap_mb'] = round(int(heap_match.group(1)) / 1024, 2)
+                
+                elif 'Native Heap:' in line:
+                    native_match = re.search(r'Native Heap:\s+(\d+)', line)
+                    if native_match:
+                        memoria['native_heap_kb'] = int(native_match.group(1))
+                        memoria['native_heap_mb'] = round(int(native_match.group(1)) / 1024, 2)
+            
+        except Exception as e:
+            self.logger.log_error(f"Error parseando memoria: {e}")
+        
+        return memoria
+
+    def _parsear_datos(self, output):
+        """Parsear información de uso de datos"""
+        datos = {}
+        try:
+            lines = output.split('\n')
+            for line in lines:
+                if 'Data received:' in line:
+                    received_match = re.search(r'Data received:\s+([\d.]+)\s*(\w+)', line)
+                    if received_match:
+                        datos['datos_recibidos'] = received_match.group(1) + received_match.group(2)
+                
+                elif 'Data sent:' in line:
+                    sent_match = re.search(r'Data sent:\s+([\d.]+)\s*(\w+)', line)
+                    if sent_match:
+                        datos['datos_enviados'] = sent_match.group(1) + sent_match.group(2)
+                
+                elif 'Foreground activities:' in line:
+                    fg_match = re.search(r'Foreground activities:\s+(\d+)', line)
+                    if fg_match:
+                        datos['actividades_foreground'] = int(fg_match.group(1))
+        
+        except Exception as e:
+            self.logger.log_error(f"Error parseando datos: {e}")
+        
+        return datos
+
+    def _parsear_cpu(self, output, package_name):
+        """Parsear información de CPU"""
+        cpu = {}
+        try:
+            lines = output.split('\n')
+            for line in lines:
+                if package_name in line:
+                    # Formato típico de top: PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND
+                    parts = line.split()
+                    if len(parts) >= 9:
+                        cpu['cpu_usage'] = parts[8] + '%'
+                        cpu['memory_usage'] = parts[9] + '%' if len(parts) > 9 else 'N/A'
+                        break
+        except Exception as e:
+            self.logger.log_error(f"Error parseando CPU: {e}")
+        
+        return cpu
+
+    def _mostrar_estadisticas_app(self, package_name):
+        """Mostrar estadísticas de la aplicación"""
+        def obtener_estadisticas():
+            progress_dialog = self._mostrar_dialogo_progreso(self.logcat_window, "Obteniendo estadísticas...")
+            
+            try:
+                # Primero abrir la aplicación
+                success_open, msg_open = self._abrir_app_en_dispositivo(package_name)
+                
+                # Luego obtener estadísticas
+                success_stats, result_stats = self._obtener_estadisticas_app(package_name)
+                
+                self.root.after(0, lambda: self._procesar_estadisticas(
+                    progress_dialog, package_name, success_open, msg_open, success_stats, result_stats))
+                    
+            except Exception as e:
+                self.root.after(0, lambda: self._procesar_error_estadisticas(progress_dialog, str(e)))
+
+        threading.Thread(target=obtener_estadisticas, daemon=True).start()
+
+    def _procesar_estadisticas(self, progress_dialog, package_name, success_open, msg_open, success_stats, result_stats):
+        """Procesar y mostrar estadísticas obtenidas"""
+        progress_dialog.destroy()
+        
+        dialog = tk.Toplevel(self.logcat_window)
+        dialog.title(f"Estadísticas - {package_name}")
+        dialog.geometry("500x600")
+        dialog.configure(bg=self.styles.COLORS['primary_bg'])
+        dialog.transient(self.logcat_window)
+        dialog.grab_set()
+
+        main_frame = tk.Frame(dialog, bg=self.styles.COLORS['primary_bg'], padx=20, pady=20)
+        main_frame.pack(fill="both", expand=True)
+
+        # Título
+        tk.Label(
+            main_frame,
+            text=f"📊 Estadísticas de {package_name}",
+            font=("Segoe UI", 14, "bold"),
+            bg=self.styles.COLORS['primary_bg'],
+            fg=self.styles.COLORS['accent'],
+            pady=10
+        ).pack()
+
+        # Resultado de apertura
+        open_frame = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
+        open_frame.pack(fill="x", pady=10)
+        
+        open_icon = "✅" if success_open else "❌"
+        open_color = "#4caf50" if success_open else "#f44336"
+        
+        tk.Label(
+            open_frame,
+            text=f"{open_icon} Estado: {msg_open}",
+            font=("Segoe UI", 10),
+            bg=self.styles.COLORS['primary_bg'],
+            fg=open_color,
+            justify="left"
+        ).pack(anchor="w")
+
+        if success_stats and isinstance(result_stats, dict):
+            # Mostrar estadísticas en un frame con scroll
+            stats_frame = tk.Frame(main_frame)
+            stats_frame.pack(fill="both", expand=True, pady=10)
+
+            stats_text = scrolledtext.ScrolledText(
+                stats_frame,
+                wrap="word",
+                font=("Consolas", 9),
+                bg=self.styles.COLORS['secondary_bg'],
+                fg=self.styles.COLORS['text_primary'],
+                height=15,
+                padx=10,
+                pady=10
+            )
+            stats_text.pack(fill="both", expand=True)
+
+            # Formatear estadísticas
+            stats_text.insert("1.0", "📈 ESTADÍSTICAS DETALLADAS\n")
+            stats_text.insert("2.0", "=" * 50 + "\n\n")
+            
+            # Memoria
+            stats_text.insert("end", "🧠 USO DE MEMORIA:\n")
+            stats_text.insert("end", "-" * 30 + "\n")
+            if 'pss_mb' in result_stats:
+                stats_text.insert("end", f"• Memoria total (PSS): {result_stats['pss_mb']} MB\n")
+            if 'java_heap_mb' in result_stats:
+                stats_text.insert("end", f"• Java Heap: {result_stats['java_heap_mb']} MB\n")
+            if 'native_heap_mb' in result_stats:
+                stats_text.insert("end", f"• Native Heap: {result_stats['native_heap_mb']} MB\n")
+            stats_text.insert("end", "\n")
+            
+            # CPU
+            stats_text.insert("end", "⚡ USO DE CPU:\n")
+            stats_text.insert("end", "-" * 30 + "\n")
+            if 'cpu_usage' in result_stats:
+                stats_text.insert("end", f"• Uso de CPU: {result_stats['cpu_usage']}\n")
+            if 'memory_usage' in result_stats:
+                stats_text.insert("end", f"• Uso de Memoria: {result_stats['memory_usage']}\n")
+            stats_text.insert("end", "\n")
+            
+            # Datos
+            stats_text.insert("end", "📡 USO DE DATOS:\n")
+            stats_text.insert("end", "-" * 30 + "\n")
+            if 'datos_recibidos' in result_stats:
+                stats_text.insert("end", f"• Datos recibidos: {result_stats['datos_recibidos']}\n")
+            if 'datos_enviados' in result_stats:
+                stats_text.insert("end", f"• Datos enviados: {result_stats['datos_enviados']}\n")
+            if 'actividades_foreground' in result_stats:
+                stats_text.insert("end", f"• Actividades en foreground: {result_stats['actividades_foreground']}\n")
+            
+            stats_text.config(state='disabled')
+        else:
+            # Mostrar error
+            error_frame = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
+            error_frame.pack(fill="both", expand=True, pady=10)
+            
+            tk.Label(
+                error_frame,
+                text="❌ No se pudieron obtener estadísticas detalladas",
+                font=("Segoe UI", 10),
+                bg=self.styles.COLORS['primary_bg'],
+                fg="#f44336",
+                pady=10
+            ).pack()
+            
+            if isinstance(result_stats, str):
+                error_text = scrolledtext.ScrolledText(
+                    error_frame,
+                    wrap="word",
+                    font=("Consolas", 8),
+                    bg=self.styles.COLORS['secondary_bg'],
+                    fg=self.styles.COLORS['text_primary'],
+                    height=5
+                )
+                error_text.pack(fill="x", pady=5)
+                error_text.insert("1.0", result_stats)
+                error_text.config(state='disabled')
+
+        # Botón cerrar
+        btn_frame = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
+        btn_frame.pack(fill="x", pady=10)
+
+        tk.Button(
+            btn_frame,
+            text="Cerrar",
+            command=dialog.destroy,
+            font=("Segoe UI", 9),
+            bg="#6c757d",
+            fg="white",
+            relief="flat",
+            padx=20,
+            pady=5,
+            cursor="hand2"
+        ).pack(side="right")
+
+        self._centrar_dialogo(dialog, self.logcat_window)
+
+    def _procesar_error_estadisticas(self, progress_dialog, error):
+        """Procesar error al obtener estadísticas"""
+        progress_dialog.destroy()
+        messagebox.showerror("Error", f"No se pudieron obtener las estadísticas:\n{error}")
+
+    def _mostrar_dialogo_progreso(self, parent, mensaje):
+        """Mostrar diálogo de progreso"""
+        dialog = tk.Toplevel(parent)
+        dialog.title("Procesando")
+        dialog.geometry("300x100")
+        dialog.transient(parent)
+        dialog.grab_set()
+        dialog.configure(bg=self.styles.COLORS['primary_bg'])
+        dialog.resizable(False, False)
+
+        self._centrar_dialogo(dialog, parent)
+
+        tk.Label(
+            dialog,
+            text=mensaje,
+            font=("Segoe UI", 10),
+            bg=self.styles.COLORS['primary_bg'],
+            fg=self.styles.COLORS['text_primary'],
+            pady=20
+        ).pack()
+
+        progress = ttk.Progressbar(
+            dialog,
+            mode='indeterminate',
+            length=200
+        )
+        progress.pack(pady=10)
+        progress.start()
+
+        return dialog
+
+    def _centrar_dialogo(self, dialog, parent):
+        """Centrar diálogo en la pantalla"""
+        dialog.update_idletasks()
+        x = parent.winfo_x() + (parent.winfo_width() - dialog.winfo_width()) // 2
+        y = parent.winfo_y() + (parent.winfo_height() - dialog.winfo_height()) // 2
+        dialog.geometry(f"+{x}+{y}")

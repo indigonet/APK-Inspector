@@ -336,6 +336,26 @@
    'C:\\Users\\Matias '
    'iOne\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\_threading_local.py',
    'PYMODULE'),
+  ('app',
+   'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
+   'ISV\\app\\__init__.py',
+   'PYMODULE'),
+  ('app.apk_manager',
+   'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
+   'ISV\\app\\apk_manager.py',
+   'PYMODULE'),
+  ('app.app_initializer',
+   'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
+   'ISV\\app\\app_initializer.py',
+   'PYMODULE'),
+  ('app.app_services',
+   'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
+   'ISV\\app\\app_services.py',
+   'PYMODULE'),
+  ('app.main',
+   'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
+   'ISV\\app\\main.py',
+   'PYMODULE'),
   ('argparse',
    'C:\\Users\\Matias '
    'iOne\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\argparse.py',
@@ -535,6 +555,18 @@
   ('core.apk_analyzer',
    'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
    'ISV\\core\\apk_analyzer.py',
+   'PYMODULE'),
+  ('core.apk_signer',
+   'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
+   'ISV\\core\\apk_signer.py',
+   'PYMODULE'),
+  ('core.logcat',
+   'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
+   'ISV\\core\\logcat.py',
+   'PYMODULE'),
+  ('core.pci_dss_analyzer',
+   'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
+   'ISV\\core\\pci_dss_analyzer.py',
    'PYMODULE'),
   ('core.signature_verifier',
    'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
@@ -1092,6 +1124,10 @@
    'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
    'ISV\\ui\\components.py',
    'PYMODULE'),
+  ('ui.dialogFirmaCreate',
+   'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
+   'ISV\\ui\\dialogFirmaCreate.py',
+   'PYMODULE'),
   ('ui.dialogs',
    'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
    'ISV\\ui\\dialogs.py',
@@ -1128,6 +1164,10 @@
    'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
    'ISV\\utils\\__init__.py',
    'PYMODULE'),
+  ('utils.APKParser',
+   'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
+   'ISV\\utils\\APKParser.py',
+   'PYMODULE'),
   ('utils.config_manager',
    'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
    'ISV\\utils\\config_manager.py',
@@ -1143,10 +1183,6 @@
   ('utils.logger',
    'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
    'ISV\\utils\\logger.py',
-   'PYMODULE'),
-  ('utils.pci_dss_analyzer',
-   'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '
-   'ISV\\utils\\pci_dss_analyzer.py',
    'PYMODULE'),
   ('utils.version',
    'C:\\Users\\Matias iOne\\source\\repost_vscode\\Automatizacion '

@@ -171,7 +171,7 @@ class BotonRedondeado(tk.Canvas):
         styles = {
             'primary': {
                 'normal': '#ffffff',
-                'hover': '#f0f0f0',
+                'hover': "#cad5ef",
                 'active': '#e0e0e0',
                 'border': '#000000',
                 'text': '#000000'
@@ -205,15 +205,15 @@ class BotonRedondeado(tk.Canvas):
                 'text': '#2E7D32'    
             },
             'logcat': { 
-                'normal': "#F1E36A",
+                'normal': "#FDFADD",
                 'hover': "#FFEB3B",  
-                'active': "#FFF59D", 
-                'border': "#FBC02D",  
+                'active': "#E8DF91", 
+                'border': "#DCFB2D",  
                 'text': "#212121"    
             },
             'APK': {
                 'normal': '#ffffff',
-                'hover': '#f0f0f0',
+                'hover': "#e3ede1",
                 'active': '#e0e0e0',
                 'border': "#1E4428",
                 'text': '#000000'

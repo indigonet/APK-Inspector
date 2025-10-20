@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['main.py'],
+    ['launcher.py'],
     pathex=[],
     binaries=[],
     datas=[('assets', 'assets')],
