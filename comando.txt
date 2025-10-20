@@ -1,0 +1,10 @@
+pyinstaller --onefile --windowed --name "APK Inspector" --add-data "assets/logoAPP.png;." --icon=assets/logoAPP.png --clean --hidden-import=PIL --hidden-import=PIL._tkinter_finder --hidden-import=tkinter --hidden-import=tclttk main.py
+
+
+cd "C:\Users\Matias iOne\source\repost_vscode\Automatizacion ISV"
+
+Start-Process -FilePath "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe" -ArgumentList 'sign', '/f', 'certificado.pfx', '/p', '123456', '/fd', 'SHA256', '/t', 'http://timestamp.digicert.com', 'dist\APK Inspector.exe' -Wait
+
+signtool sign /a /fd SHA256 APK_Inspector.exe
+
+pyinstaller --onefile --windowed --name "APK Inspector" --add-data "assets;assets" --icon=assets/logoAPP.ico --clean --hidden-import=PIL --hidden-import=PIL._tkinter_finder --hidden-import=tkinter --hidden-import=tkinter.ttk main.py

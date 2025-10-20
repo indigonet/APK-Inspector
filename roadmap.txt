@@ -1,0 +1,14 @@
+ROADMAP = {
+    'v2.0': [
+        'Análisis de componentes',
+        'Score de seguridad automático', 
+        'Comparación entre versiones',
+        'Plugins para análisis adicionales'
+    ],
+    'v2.5': [
+        'Integración con VirusTotal',
+        'Análisis de tráfico de red',
+        'Reportes ejecutivos PDF',
+        'API REST'
+    ]
+}
