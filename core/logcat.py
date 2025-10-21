@@ -62,10 +62,25 @@ class LogcatManager:
         except Exception as e:
             self.logger.log_warning(f"Error obteniendo ruta ADB: {e}")
             return "adb"
-
+        
+  
     def _ejecutar_adb(self, comando, timeout=15):
-        """Ejecutar comando ADB de forma segura"""
+        """Ejecutar comando ADB de forma segura sin mostrar ventana CMD"""
         try:
+            startupinfo = None
+            if hasattr(subprocess, 'STARTUPINFO'):
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 0  # Oculta la ventana
+                
+                # Para Python 3.7+ usar CREATE_NO_WINDOW
+                if hasattr(subprocess, 'CREATE_NO_WINDOW'):
+                    creationflags = subprocess.CREATE_NO_WINDOW
+                else:
+                    creationflags = 0
+            else:
+                creationflags = 0
+
             if isinstance(comando, str):
                 if self.adb_path != "adb":
                     full_cmd = f'"{self.adb_path}" {comando}'
@@ -79,7 +94,9 @@ class LogcatManager:
                     text=True,
                     timeout=timeout,
                     encoding='utf-8',
-                    errors='ignore'
+                    errors='ignore',
+                    startupinfo=startupinfo,
+                    creationflags=creationflags
                 )
             else:
                 if self.adb_path != "adb":
@@ -93,7 +110,9 @@ class LogcatManager:
                     text=True,
                     timeout=timeout,
                     encoding='utf-8',
-                    errors='ignore'
+                    errors='ignore',
+                    startupinfo=startupinfo,
+                    creationflags=creationflags
                 )
             
             return result
@@ -104,6 +123,52 @@ class LogcatManager:
         except Exception as e:
             self.logger.log_error(f"Error ejecutando ADB: {comando}", e)
             return None
+        
+
+    def _recargar_packages(self):
+        """Recargar manualmente la lista de packages"""
+        self.status_label.config(
+            text="🔄 Recargando lista de packages...",
+            fg="#ff9800"
+        )       
+
+        def recargar():
+            result = self._ejecutar_adb("shell pm list packages")
+            
+            if result and result.returncode == 0:
+                packages = []
+                for line in result.stdout.split('\n'):
+                    if line.startswith('package:'):
+                        package_name = line.replace('package:', '').strip()
+                        if package_name:
+                            packages.append(package_name)
+                
+                packages.sort()
+                self.all_packages = packages
+                
+                self.root.after(0, self._actualizar_packages_ui_recarga, packages)
+            else:
+                error_msg = "No se pudieron recargar los packages"
+                self.root.after(0, lambda: self.status_label.config(
+                    text=f"❌ {error_msg}",
+                    fg="#f44336"
+                ))
+
+        threading.Thread(target=recargar, daemon=True).start()
+
+    def _actualizar_packages_ui_recarga(self, packages):
+        """Actualizar UI después de recargar packages"""
+        self.package_combo['values'] = packages
+        self.status_label.config(
+            text=f"✅ {len(packages)} packages recargados correctamente",
+            fg="#4caf50"
+        )
+        
+        # Mantener el package seleccionado si aún existe
+        current_package = self.package_var.get()
+        if current_package and current_package not in packages:
+            self.package_var.set("")
+            self.filter_info_label.config(text="🎯 Filtro: Ninguno")        
 
     def _obtener_pid_package(self, package_name):
         """Obtener el PID de un package usando pidof"""
@@ -141,15 +206,21 @@ class LogcatManager:
         self._verificar_y_cargar_automaticamente()
 
     def _detectar_pantalla_actual(self):
-        """Detectar en qué pantalla está la ventana principal"""
+        """Detectar en qué pantalla está la ventana principal de forma más precisa"""
         try:
-            # Obtener información de la pantalla principal
+            # Obtener posición de la ventana principal
             main_x = self.root.winfo_x()
-            main_width = self.root.winfo_screenwidth()
+            main_y = self.root.winfo_y()
+            main_width = self.root.winfo_width()
             
-            # Si la ventana principal está en la segunda mitad de la pantalla principal,
+            # Obtener dimensiones de la pantalla principal
+            screen_width = self.root.winfo_screenwidth()
+            
+            # Si la ventana principal está centrada o en la segunda mitad de la pantalla principal,
             # asumimos que está en pantalla secundaria
-            if main_x > main_width // 2:
+            screen_threshold = screen_width * 0.7  # 70% del ancho de la pantalla principal
+            
+            if main_x > screen_threshold or (main_x > screen_width // 2 and main_width < screen_width // 2):
                 self.current_screen = 1  # Pantalla secundaria
             else:
                 self.current_screen = 0  # Pantalla principal
@@ -159,34 +230,60 @@ class LogcatManager:
             self.current_screen = 0
 
     def _posicionar_ventana_inteligente(self):
-        """Posicionar ventana de forma inteligente según la pantalla"""
+        """Posicionar ventana de forma inteligente según la pantalla actual"""
         try:
+            # Obtener información de todas las pantallas
+            total_width = self.logcat_window.winfo_screenwidth()
+            total_height = self.logcat_window.winfo_screenheight()
+            
+            # Obtener posición y tamaño de la ventana principal
+            main_x = self.root.winfo_x()
+            main_y = self.root.winfo_y()
+            main_width = self.root.winfo_width()
+            main_height = self.root.winfo_height()
+            
             if self.current_screen == 1:  # Pantalla secundaria
-                # Usar toda la pantalla secundaria
-                screen_width = self.logcat_window.winfo_screenwidth()
-                screen_height = self.logcat_window.winfo_screenheight()
-                self.logcat_window.geometry(f"{screen_width}x{screen_height-50}+0+0")
+                # Usar toda la pantalla secundaria (asumiendo que es del mismo tamaño)
+                self.logcat_window.geometry(f"{total_width}x{total_height-50}+0+0")
+                self.logcat_window.state('zoomed')  # Maximizar en la pantalla secundaria
             else:
                 # Posicionar junto a la ventana principal en pantalla principal
-                main_x = self.root.winfo_x()
-                main_y = self.root.winfo_y()
-                main_width = self.root.winfo_width()
+                # Calcular posición óptima
+                if main_x + main_width + 1000 <= total_width:
+                    # Hay espacio a la derecha
+                    logcat_x = main_x + main_width + 10
+                    logcat_y = main_y
+                    logcat_width = min(1000, total_width - logcat_x - 20)
+                else:
+                    # No hay espacio a la derecha, poner a la izquierda
+                    logcat_x = max(10, main_x - 1000 - 10)
+                    logcat_y = main_y
+                    logcat_width = min(1000, main_x - 20)
                 
-                logcat_x = main_x + main_width + 10
-                logcat_y = main_y
+                logcat_height = total_height - 100
                 
-                screen_width = self.root.winfo_screenwidth()
-                screen_height = self.root.winfo_screenheight()
-                
-                logcat_width = screen_width - main_width - 50
-                if logcat_width < 1000:
-                    logcat_width = 1000
+                # Asegurar dimensiones mínimas
+                if logcat_width < 500:
+                    logcat_width = 500
+                if logcat_height < 400:
+                    logcat_height = 400
                     
-                self.logcat_window.geometry(f"{logcat_width}x{screen_height-100}+{logcat_x}+{logcat_y}")
+                self.logcat_window.geometry(f"{logcat_width}x{logcat_height}+{logcat_x}+{logcat_y}")
             
         except Exception as e:
             self.logger.log_warning(f"No se pudo posicionar ventana inteligente: {e}")
+            # Geometría por defecto centrada
             self.logcat_window.geometry("1400x850")
+            self._centrar_ventana(self.logcat_window)
+
+    def _centrar_ventana(self, ventana):
+        """Centrar ventana en la pantalla"""
+        ventana.update_idletasks()
+        ancho = ventana.winfo_width()
+        alto = ventana.winfo_height()
+        x = (ventana.winfo_screenwidth() // 2) - (ancho // 2)
+        y = (ventana.winfo_screenheight() // 2) - (alto // 2)
+        ventana.geometry(f"{ancho}x{alto}+{x}+{y}")
 
     def _crear_ui_logcat_mejorada(self):
         """Crear interfaz de usuario MEJORADA para Logcat"""
@@ -201,7 +298,7 @@ class LogcatManager:
         # Título principal
         title_label = tk.Label(
             header_frame,
-            text="🐱 LOGCAT - MONITOR DE APLICACIONES",
+            text="🐱 LOGCAT",
             font=("Segoe UI", 16, "bold"),
             bg=self.styles.COLORS['primary_bg'],
             fg=self.styles.COLORS['accent'],
@@ -242,7 +339,7 @@ class LogcatManager:
             fg=self.styles.COLORS['text_primary']
         ).pack(side="left", padx=(0, 10))
 
-        # Frame para combo y botones
+        # ✅ CORREGIDO: Frame para combo y botones - DEFINIDO ANTES DE USAR
         combo_frame = tk.Frame(package_selector_frame, bg=self.styles.COLORS['secondary_bg'])
         combo_frame.pack(side="left", fill="x", expand=True)
 
@@ -262,11 +359,20 @@ class LogcatManager:
         self.package_combo.bind('<Return>', lambda e: self._aplicar_filtro_automatico())
         self.package_combo.bind('<FocusIn>', lambda e: self.package_combo.selection_range(0, tk.END))
 
-        # Botones de acción para packages
+        # ✅ CORREGIDO: Botones de acción para packages - AHORA DENTRO DEL COMBO_FRAME
         btn_package_frame = tk.Frame(combo_frame, bg=self.styles.COLORS['secondary_bg'])
         btn_package_frame.pack(side="left", padx=(5, 0))
 
-        # ✅ NUEVO: Botón para estadísticas de la app
+        # Botón para recargar packages
+        self.btn_recargar = self._crear_boton_moderno(
+            btn_package_frame,
+            "🔄 Recargar",
+            self._recargar_packages,
+            "#ff9800"
+        )
+        self.btn_recargar.pack(side="left", padx=(0, 5))
+
+        # Botón para estadísticas de la app
         self.btn_estadisticas = self._crear_boton_moderno(
             btn_package_frame,
             "📊 Estadísticas App",
@@ -929,15 +1035,30 @@ class LogcatManager:
         self._actualizar_contador_lineas()
 
     def _guardar_log(self):
-        """Guardar log actual en archivo"""
+        """Guardar log actual en archivo con nombre mejorado"""
         try:
             contenido = self.logcat_text.get('1.0', 'end-1c')
             if not contenido.strip():
                 messagebox.showwarning("Advertencia", "No hay logs para guardar")
                 return
             
+            # ✅ MEJORADO: Nombre de archivo con timestamp, package y filtro
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"logcat_{timestamp}.txt"
+            
+            # Determinar el nombre base según el filtro aplicado
+            if self.current_filter:
+                # Limpiar el nombre del filtro para que sea válido como nombre de archivo
+                clean_filter = "".join(c for c in self.current_filter if c.isalnum() or c in ('-', '_'))
+                base_name = f"logcat_{clean_filter}_{timestamp}"
+            else:
+                base_name = f"logcat_all_logs_{timestamp}"
+            
+            # Si hay un package de APK analizado, incluirlo también
+            if self.current_apk_package and self.current_apk_package != self.current_filter:
+                clean_apk = "".join(c for c in self.current_apk_package if c.isalnum() or c in ('-', '_'))
+                base_name = f"logcat_{clean_apk}_{timestamp}"
+            
+            filename = f"{base_name}.txt"
             
             filepath = filedialog.asksaveasfilename(
                 defaultextension=".txt",
@@ -946,17 +1067,33 @@ class LogcatManager:
             )
             
             if filepath:
+                # ✅ MEJORADO: Agregar metadatos al inicio del archivo
+                metadata = f"""LOGCAT EXPORTADO - METADATOS
+================================
+Fecha y hora: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+Package analizado: {self.current_apk_package or 'No especificado'}
+Filtro aplicado: {self.current_filter or 'Todos los logs'}
+PID monitorizado: {self.current_pid or 'No aplicable'}
+Total líneas: {self.logcat_text.get('1.0', 'end-1c').count(chr(10)) + 1}
+================================
+LOGS:
+================================
+
+"""
+                
                 with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(metadata)
                     f.write(contenido)
                 
-                messagebox.showinfo("Éxito", f"Log guardado en:\n{filepath}")
+                # ✅ CORREGIDO: Sin backslash en f-string
+                messagebox.showinfo("Éxito", "Log guardado en:\n" + filepath)
                 self.status_label.config(
                     text=f"💾 Log guardado: {Path(filepath).name}",
                     fg="#4caf50"
                 )
                 
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo guardar el log:\n{str(e)}")
+            messagebox.showerror("Error", "No se pudo guardar el log:\n" + str(e))
 
     def _cerrar_logcat(self):
         """Manejar cierre de la ventana"""

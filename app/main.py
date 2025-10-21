@@ -42,10 +42,20 @@ class APKInspectorApp:
         try:
             self.components = self.initializer.get_all_components()
             
-            # ✅ CORREGIDO: Usar APKParser como analyzer principal
+            # ✅ VERIFICAR QUE EL ANALYZER ESTÉ CORRECTO
             if 'apk_analyzer' not in self.components or self.components['apk_analyzer'] is None:
-                self.components['apk_analyzer'] = APKParser()
-                print("🔍 APKParser inicializado como analyzer principal")
+                print("❌ APK Analyzer no encontrado en componentes, creando uno...")
+                from core.apk_analyzer import APKAnalyzer
+                self.components['apk_analyzer'] = APKAnalyzer(
+                    self.components['tool_detector'], 
+                    self.components['logger']
+                )
+            
+            # ✅ VERIFICAR MÉTODOS DISPONIBLES
+            analyzer = self.components['apk_analyzer']
+            print(f"🔍 APK Analyzer tipo: {type(analyzer)}")
+            print(f"🔍 Tiene analizar_apk_completo: {hasattr(analyzer, 'analizar_apk_completo')}")
+            print(f"🔍 Tiene parsear_informacion_apk: {hasattr(analyzer, 'parsear_informacion_apk')}")
             
             self.services = AppServices(self.components)
             self.styles = self.components['styles']
@@ -67,6 +77,14 @@ class APKInspectorApp:
                 self.logger, 
                 self.adb_manager
             )
+
+            # Verificar que el analyzer tenga los métodos necesarios
+            if not hasattr(self.apk_analyzer, 'analizar_apk_completo'):
+                self.logger.log_error("APKAnalyzer no tiene método analizar_apk_completo")
+                # Crear un analyzer de respaldo
+                from core.apk_analyzer import APKAnalyzer
+                self.apk_analyzer = APKAnalyzer(self.tool_detector, self.logger)
+                self.components['apk_analyzer'] = self.apk_analyzer
 
             # NUEVO: Inicializar LogcatManager con config_manager
             try:
@@ -492,6 +510,17 @@ class APKInspectorApp:
             return
             
         success, message = self.services.analyze_apk(apk_path)
+
+        if success:
+            # ✅ DEBUG: Mostrar información parseada
+            current_analysis = self.components['current_analysis']
+            parsed_info = current_analysis['parsed_info']
+            print(f"✅ ANÁLISIS COMPLETADO:")
+            print(f"   Package: {parsed_info.get('package')}")
+            print(f"   App: {parsed_info.get('app_name')}")
+            print(f"   Versión: {parsed_info.get('version_name')}")
+            print(f"   Target SDK: {parsed_info.get('target_sdk')}")
+            print(f"   Método: {parsed_info.get('metodo_analisis')}")
 
         if success:
             self.apk_path = self.components['apk_path']

@@ -170,54 +170,61 @@ class BotonRedondeado(tk.Canvas):
         """Obtener configuración de estilo para el botón"""
         styles = {
             'primary': {
-                'normal': '#ffffff',
-                'hover': "#cad5ef",
-                'active': '#e0e0e0',
-                'border': '#000000',
-                'text': '#000000'
+                'normal': '#FFFFFF',  # Blanco puro
+                'hover': '#F5F5F5',   # Blanco ligeramente gris
+                'active': '#EEEEEE',  # Gris muy claro
+                'border': '#000000',  # Negro
+                'text': '#000000'     # Negro
             },
             'secondary': {
-                'normal': '#e8e8e8',
-                'hover': '#d8d8d8', 
-                'active': '#c8c8c8',
-                'border': '#666666',
-                'text': '#000000'
+                'normal': '#F8F9FA',  # Blanco casi puro
+                'hover': '#E9ECEF',   # Gris muy claro
+                'active': '#DEE2E6',  # Gris claro
+                'border': '#495057',  # Gris oscuro
+                'text': '#000000'     # Negro
             },
             'danger': {
-                'normal': '#f44336',
-                'hover': '#d32f2f',
-                'active': '#b71c1c',
-                'border': '#7f0000',
-                'text': '#ffffff'
+                'normal': '#FFFFFF',  # Blanco
+                'hover': '#FFEBEE',   # Rojo muy claro
+                'active': '#FFCDD2',  # Rosa claro
+                'border': '#D32F2F',  # Rojo
+                'text': '#D32F2F'     # Rojo
             },
             'success': {
-                'normal': '#4CAF50',
-                'hover': '#388E3C',
-                'active': '#2E7D32',
-                'border': '#1B5E20',
-                'text': '#ffffff'
+                'normal': '#FFFFFF',  # Blanco
+                'hover': '#E8F5E8',   # Verde muy claro
+                'active': '#C8E6C9',  # Verde claro
+                'border': '#2E7D32',  # Verde oscuro
+                'text': '#2E7D32'     # Verde oscuro
             },
             'sign': { 
-                'normal': '#ffffff',
-                'hover': '#e8f5e8',  
-                'active': '#d0ebd0',
-                'border': '#4CAF50',  
-                'text': '#2E7D32'    
+                'normal': '#FFFFFF',  # Blanco
+                'hover': '#F1F8E9',   # Verde muy claro
+                'active': '#DCEDC8',  # Verde claro
+                'border': '#4CAF50',  # Verde
+                'text': '#2E7D32'     # Verde oscuro
             },
             'logcat': { 
-                'normal': "#FDFADD",
-                'hover': "#FFEB3B",  
-                'active': "#E8DF91", 
-                'border': "#DCFB2D",  
-                'text': "#212121"    
+                'normal': "#FFFFFF",   # Blanco
+                'hover': "#FFFDE7",    # Amarillo muy claro
+                'active': "#EAE194",   # Amarillo claro
+                'border': "#FFD600",   # Amarillo vibrante
+                'text': "#212121"      # Negro
             },
             'APK': {
-                'normal': '#ffffff',
-                'hover': "#e3ede1",
-                'active': '#e0e0e0',
-                'border': "#1E4428",
-                'text': '#000000'
+                'normal': '#FFFFFF',   # Blanco
+                'hover': "#CEDEF5",    # Azul muy claro
+                'active': '#E3F2FD',   # Azul claro
+                'border': "#2196F3",   # Azul Android
+                'text': '#000000'      # Negro
             },
+            'warning': {
+                'normal': '#FFFFFF',   # Blanco
+                'hover': '#FFF8E1',    # Amarillo muy claro
+                'active': '#FFECB3',   # Amarillo claro
+                'border': '#FFA000',   # Amarillo anaranjado
+                'text': '#E65100'      # Naranja oscuro
+            }
         }
         return styles.get(style_name, styles['primary'])
     

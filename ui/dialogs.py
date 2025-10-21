@@ -137,26 +137,41 @@ class LogDialog:
         self.log_text.config(state='disabled')
     
     def _filtrar_seccion(self, seccion_buscada):
+        # ✅ CORREGIDO: Buscar la sección exacta
         inicio = self.log_content.find(seccion_buscada)
         if inicio == -1:
             return f"No se encontró la sección: {seccion_buscada}"
         
-        siguiente_inicio = -1
-        secciones = ["=== AAPT DUMP BADGING ===", "=== APKSIGNER VERIFY ===", "=== JARSIGNER VERIFY ==="]
+        # Buscar la siguiente sección
+        secciones = [
+            "=== AAPT DUMP BADGING ===", 
+            "=== APKSIGNER VERIFY ===", 
+            "=== JARSIGNER VERIFY ===",
+            "🛡️ ANÁLISIS PCI DSS DETALLADO",
+            "═" * 80  # Línea separadora
+        ]
         
+        siguiente_inicio = -1
         for seccion in secciones:
             if seccion != seccion_buscada:
                 siguiente = self.log_content.find(seccion, inicio + 1)
                 if siguiente != -1 and (siguiente_inicio == -1 or siguiente < siguiente_inicio):
                     siguiente_inicio = siguiente
         
+        # Si encontramos siguiente sección, cortar ahí
         if siguiente_inicio != -1:
-            return self.log_content[inicio:siguiente_inicio]
+            # Buscar el último salto de línea antes de la siguiente sección
+            ultimo_salto = self.log_content.rfind('\n', inicio, siguiente_inicio)
+            if ultimo_salto != -1:
+                return self.log_content[inicio:ultimo_salto]
+            else:
+                return self.log_content[inicio:siguiente_inicio]
         else:
             return self.log_content[inicio:]
     
     def _obtener_contenido_completo(self):
         contenido_completo = ""
+        
         secciones_logs = [
             "=== AAPT DUMP BADGING ===",
             "=== APKSIGNER VERIFY ===", 
@@ -166,6 +181,7 @@ class LogDialog:
         for seccion in secciones_logs:
             inicio = self.log_content.find(seccion)
             if inicio != -1:
+                # Buscar el inicio de la siguiente sección
                 siguiente_inicio = -1
                 for otra_seccion in secciones_logs:
                     if otra_seccion != seccion:
@@ -173,29 +189,33 @@ class LogDialog:
                         if siguiente != -1 and (siguiente_inicio == -1 or siguiente < siguiente_inicio):
                             siguiente_inicio = siguiente
                 
+                # Si encontramos siguiente sección, cortar ahí, sino tomar hasta el final
                 if siguiente_inicio != -1:
-                    contenido_completo += self.log_content[inicio:siguiente_inicio] + "\n\n"
+                    contenido_seccion = self.log_content[inicio:siguiente_inicio]
                 else:
-                    contenido_completo += self.log_content[inicio:] + "\n\n"
+                    contenido_seccion = self.log_content[inicio:]
+                
+                contenido_completo += contenido_seccion + "\n\n"
         
+        # ✅ CORREGIDO: Si no encontramos secciones, usar el contenido completo
+        if not contenido_completo.strip():
+            contenido_completo = self.log_content
+        
+        # ✅ AGREGAR PCI DSS SI ESTÁ DISPONIBLE
         if self.current_analysis and 'pci_analysis' in self.current_analysis:
             pci_analysis = self.current_analysis['pci_analysis']
             
             if isinstance(pci_analysis, dict):
-                contenido_completo += "="*80 + "\n"
-                contenido_completo += "=== ANÁLISIS PCI DSS COMPLETO ===\n"
-                contenido_completo += "="*80 + "\n\n"
-                
-                if 'reporte_completo' in pci_analysis:
-                    contenido_completo += pci_analysis['reporte_completo']
-                else:
-                    contenido_completo += self._generar_reporte_pci_detallado(pci_analysis)
-        
-        if not contenido_completo.strip():
-            contenido_completo = "No hay logs de herramientas disponibles\n\n"
-            
-            if self.current_analysis and 'pci_analysis' in self.current_analysis:
-                contenido_completo += "Nota: Hay análisis PCI DSS disponible, pero no se pudo extraer correctamente."
+                # Verificar si PCI DSS ya está en el contenido
+                if "ANÁLISIS PCI DSS" not in contenido_completo:
+                    contenido_completo += "═" * 80 + "\n"
+                    contenido_completo += "=== ANÁLISIS PCI DSS COMPLETO ===\n"
+                    contenido_completo += "═" * 80 + "\n\n"
+                    
+                    if 'reporte_completo' in pci_analysis:
+                        contenido_completo += pci_analysis['reporte_completo']
+                    else:
+                        contenido_completo += self._generar_reporte_pci_detallado(pci_analysis)
         
         return contenido_completo
 

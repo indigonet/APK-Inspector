@@ -34,7 +34,7 @@ class AppServices:
         self.current_analysis = {}
 
     def analyze_apk(self, apk_path):
-        """Ejecutar análisis completo del APK - CORREGIDO PCI DSS"""
+        """Ejecutar análisis completo del APK - CORREGIDO para jarsigner"""
         try:
             if not self.apk_analyzer:
                 return False, "APK Analyzer no disponible"
@@ -49,32 +49,39 @@ class AppServices:
             
             config = self._get_tools_config()
             
-            # Verificar que las herramientas estén configuradas
+            # ✅ CORREGIDO: No requerir herramientas para análisis básico
             if not config.get("build_tools"):
-                return False, "Build-tools no configurado. Ve a Configurar Herramientas."
-            if not config.get("jdk_bin"):
-                return False, "JDK no configurado. Ve a Configurar Herramientas."
+                self.logger.log_warning("Build-tools no configurado, usando análisis básico")
             
             # Ejecutar análisis
             print("🛠️  EJECUTANDO HERRAMIENTAS...")
             results = self.apk_analyzer.analizar_apk_completo(apk_path_obj, config)
             
-            # ✅ DEBUG: Mostrar output de aapt para diagnóstico
-            print("🔍 DEBUG - AAPT OUTPUT COMPLETO:")
-            print("=" * 50)
-            print(results["aapt"])
-            print("=" * 50)
+            # ✅ CORREGIDO: VERIFICAR Y EJECUTAR JARSIGNER MANUALMENTE SI FALTA
+            if 'jarsigner' not in results or not results['jarsigner'] or "no disponible" in str(results.get('jarsigner', '')).lower():
+                print("🛠️  Ejecutando jarsigner manualmente...")
+                results['jarsigner'] = self._ejecutar_jarsigner_manual(apk_path_obj, config)
             
-            # Parsear información del APK
-            parsed_info = self.apk_analyzer.parsear_aapt_badging(results["aapt"])
+            # ✅ DEBUG: Mostrar output de herramientas para diagnóstico
+            print("🔍 DEBUG - HERRAMIENTAS EJECUTADAS:")
+            for herramienta, output in results.items():
+                status = "✅" if output and "error" not in str(output).lower() and "no encontrado" not in str(output).lower() else "❌"
+                print(f"   {status} {herramienta}: {str(output)[:100]}...")
+            
+            # ✅ CORREGIDO: Usar el método correcto para parsear información
+            if hasattr(self.apk_analyzer, 'parsear_informacion_apk'):
+                parsed_info = self.apk_analyzer.parsear_informacion_apk(results)
+            else:
+                # Fallback: usar aapt directamente
+                parsed_info = self._parsear_aapt_directo(results.get("aapt", ""))
+            
             print(f"📦 PARSED INFO: {parsed_info}")
             
             # Parsear información de firma
-            signature_info = self._parse_signature_info(results["apksigner"], results["jarsigner"])
+            signature_info = self._parse_signature_info(results.get("apksigner", ""), results.get("jarsigner", ""))
             print(f"🔐 SIGNATURE INFO: {signature_info}")
             
-            # ✅ CORREGIDO: EJECUTAR PCI DSS DIRECTAMENTE DESDE EL COMPONENTE
-            print("🛡️  EJECUTANDO ANÁLISIS PCI DSS...")
+            # ✅ CORREGIDO: EJECUTAR PCI DSS USANDO EL MÉTODO CORRECTO
             pci_analysis = self._ejecutar_pci_dss_directo(parsed_info, signature_info, apk_path_obj)
             print(f"🛡️  PCI ANALYSIS RESULT: {pci_analysis}")
 
@@ -89,7 +96,7 @@ class AppServices:
             # Actualizar componentes
             self.components['current_analysis'] = self.current_analysis
             
-            # ✅ GENERAR LOG COMPLETO CON PCI DSS
+            # ✅ GENERAR LOG COMPLETO
             self.current_log = self._generar_log_completo(results, parsed_info, signature_info, pci_analysis)
             self.components['current_log'] = self.current_log
             
@@ -101,25 +108,63 @@ class AppServices:
         except Exception as e:
             error_msg = f"Error durante el análisis: {str(e)}"
             print(f"❌ ERROR: {error_msg}")
+            self.logger.log_error("Error en analyze_apk", e)
             return False, error_msg
 
+    def _ejecutar_jarsigner_manual(self, apk_path: Path, config: dict) -> str:
+        """Ejecutar jarsigner manualmente si no está en los resultados"""
+        try:
+            jdk_bin = config.get("jdk_bin", "")
+            if not jdk_bin:
+                return "JDK bin no configurado"
+            
+            jarsigner_path = Path(jdk_bin) / "jarsigner"
+            if not jarsigner_path.exists():
+                jarsigner_path = Path(jdk_bin) / "jarsigner.exe"
+            
+            if not jarsigner_path.exists():
+                return "jarsigner no encontrado en JDK bin"
+            
+            # Ejecutar jarsigner verify
+            result = subprocess.run(
+                [str(jarsigner_path), "-verify", "-verbose", "-certs", str(apk_path)],
+                capture_output=True, 
+                text=True, 
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                return result.stdout
+            else:
+                return f"Error jarsigner: {result.stderr}"
+                
+        except subprocess.TimeoutExpired:
+            return "jarsigner timeout - tardó demasiado en ejecutarse"
+        except Exception as e:
+            return f"Error ejecutando jarsigner: {str(e)}"
+
     def _ejecutar_pci_dss_directo(self, parsed_info: Dict, signature_info: Dict, apk_path: Path) -> Dict:
-        """Ejecutar análisis PCI DSS directamente desde el componente"""
+        """Ejecutar análisis PCI DSS directamente desde el componente - CORREGIDO"""
         try:
             # ✅ VERIFICAR SI EXISTE EL ANALIZADOR PCI DSS EN COMPONENTES
             pci_analyzer = self.components.get('pci_analyzer')
             if not pci_analyzer:
                 print("❌ PCI Analyzer no encontrado en componentes")
-                return {"error": "PCI DSS Analyzer no disponible"}
+                return self._generate_basic_pci_analysis(parsed_info, signature_info)
             
             print(f"🛡️  PCI Analyzer encontrado: {type(pci_analyzer)}")
             
-            # ✅ VERIFICAR QUE EL MÉTODO EXISTA
-            if not hasattr(pci_analyzer, 'analizar_cumplimiento_pci'):
-                return {"error": "Método analizar_cumplimiento_pci no disponible"}
+            # ✅ VERIFICAR MÉTODOS DISPONIBLES - PRIMERO EL QUE FUNCIONABA
+            if hasattr(pci_analyzer, 'analizar_cumplimiento_pci'):
+                print("✅ Usando analizar_cumplimiento_pci")
+                resultado = pci_analyzer.analizar_cumplimiento_pci(parsed_info, signature_info, apk_path)
+            elif hasattr(pci_analyzer, 'analizar_apk'):
+                print("✅ Usando analizar_apk")
+                resultado = pci_analyzer.analizar_apk(parsed_info, signature_info)
+            else:
+                print("❌ No se encontraron métodos PCI DSS válidos")
+                return self._generate_basic_pci_analysis(parsed_info, signature_info)
             
-            # ✅ EJECUTAR ANÁLISIS PCI DSS
-            resultado = pci_analyzer.analizar_cumplimiento_pci(parsed_info, signature_info, apk_path)
             print(f"🛡️  PCI DSS ejecutado correctamente")
             
             # ✅ AGREGAR REPORTE COMPLETO AL RESULTADO
@@ -128,20 +173,225 @@ class AppServices:
                 if hasattr(pci_analyzer, 'generar_reporte_pci'):
                     reporte_completo = pci_analyzer.generar_reporte_pci(resultado)
                     resultado['reporte_completo'] = reporte_completo
+                elif hasattr(pci_analyzer, 'generar_reporte_completo'):
+                    reporte_completo = pci_analyzer.generar_reporte_completo(resultado)
+                    resultado['reporte_completo'] = reporte_completo
+                else:
+                    # Generar reporte básico si no hay método específico
+                    resultado['reporte_completo'] = self._generar_reporte_pci_basico(resultado)
                 
                 # Generar resumen compacto
                 if hasattr(pci_analyzer, 'generar_resumen_compacto'):
                     resumen_compacto = pci_analyzer.generar_resumen_compacto(resultado)
                     resultado['resumen_compacto'] = resumen_compacto
                 
-                print(f"🛡️  Hallazgos ALTOS encontrados: {len(resultado.get('hallazgos_altos', []))}")
-                print(f"🛡️  Hallazgos CRÍTICOS encontrados: {len(resultado.get('hallazgos_criticos', []))}")
+                print(f"🛡️  Hallazgos encontrados: {len(resultado.get('hallazgos', []))}")
+                print(f"🛡️  Permisos sensibles: {len(resultado.get('permisos_sensibles', []))}")
             
             return resultado
             
         except Exception as e:
             print(f"❌ ERROR ejecutando PCI DSS: {e}")
-            return {"error": f"Error ejecutando PCI DSS: {str(e)}"}
+            return self._generate_basic_pci_analysis(parsed_info, signature_info)
+
+    def _generar_reporte_pci_basico(self, pci_analysis: Dict) -> str:
+        """Generar reporte PCI DSS básico si no hay método específico"""
+        reporte = "🛡️  ANÁLISIS PCI DSS BÁSICO\n"
+        reporte += "═" * 45 + "\n"
+        
+        # Información general
+        reporte += "📊 INFORMACIÓN GENERAL\n"
+        reporte += "─────────────────────────────────────────────\n"
+        reporte += f"💻 Soporte nativo: No detectado\n"
+        reporte += f"📱 Min SDK: {pci_analysis.get('min_sdk', 'No disponible')}\n\n"
+        
+        # Permisos sensibles
+        permisos_sensibles = pci_analysis.get('permisos_sensibles', [])
+        reporte += "🚨 PERMISOS SENSIBLES\n"
+        reporte += "─────────────────────────────────────────────\n"
+        if permisos_sensibles:
+            for perm in permisos_sensibles:
+                reporte += f"• {perm}\n"
+        else:
+            reporte += "No se detectaron permisos sensibles\n"
+        
+        # Hallazgos
+        hallazgos = pci_analysis.get('hallazgos', [])
+        reporte += f"\n📊 ESTADÍSTICAS\n"
+        reporte += "─────────────────────────────────────────────\n"
+        reporte += f"Total de permisos: {pci_analysis.get('total_permisos', 0)}\n"
+        reporte += f"Permisos sensibles: {len(permisos_sensibles)}\n"
+        reporte += f"Hallazgos de seguridad: {len(hallazgos)}\n"
+        
+        return reporte
+
+    def _generate_basic_pci_analysis(self, parsed_info, signature_info):
+        """Generar análisis PCI DSS básico si el analyzer no funciona"""
+        if not parsed_info:
+            return {
+                'reporte_completo': "🛡️ ANÁLISIS PCI DSS BÁSICO\n═" + "═" * 44 + "\n❌ No hay información del APK para analizar",
+                'permisos_totales': 0,
+                'permisos_sensibles': [],
+                'modo_debug': False,
+                'firma_valida': False,
+                'hallazgos': []
+            }
+            
+        permissions = parsed_info.get('permissions', [])
+        sensitive_perms = []
+        
+        # Permisos sensibles para PCI DSS
+        pci_sensitive_permissions = [
+            'android.permission.READ_EXTERNAL_STORAGE',
+            'android.permission.WRITE_EXTERNAL_STORAGE', 
+            'android.permission.ACCESS_NETWORK_STATE',
+            'android.permission.INTERNET',
+            'android.permission.ACCESS_WIFI_STATE',
+            'android.permission.READ_PHONE_STATE',
+            'android.permission.ACCESS_FINE_LOCATION',
+            'android.permission.ACCESS_COARSE_LOCATION',
+            'android.permission.CAMERA',
+            'android.permission.RECORD_AUDIO',
+            'android.permission.READ_CONTACTS',
+            'android.permission.WRITE_CONTACTS',
+            'android.permission.READ_SMS',
+            'android.permission.SEND_SMS'
+        ]
+        
+        for perm in permissions:
+            if any(sensitive in perm for sensitive in pci_sensitive_permissions):
+                sensitive_perms.append(perm)
+        
+        # Hallazgos basados en análisis básico
+        hallazgos = []
+        if parsed_info.get('debuggable'):
+            hallazgos.append("APK en modo depuración (debuggable)")
+        if not signature_info.get('is_valid'):
+            hallazgos.append("Firma no válida o no encontrada")
+        if len(sensitive_perms) > 5:
+            hallazgos.append("Múltiples permisos sensibles detectados")
+        
+        # Análisis básico
+        reporte = "🛡️  ANÁLISIS PCI DSS BÁSICO\n"
+        reporte += "═" * 45 + "\n"
+        reporte += "📊 ESTADÍSTICAS DE SEGURIDAD\n"
+        reporte += "─────────────────────────────────────────────\n"
+        reporte += f"💻 Soporte nativo: No detectado\n"
+        reporte += f"📱 Min SDK: {parsed_info.get('min_sdk', 'No disponible')}\n\n"
+        
+        reporte += "🚨 PERMISOS SENSIBLES\n"
+        reporte += "─────────────────────────────────────────────\n"
+        if sensitive_perms:
+            for perm in sensitive_perms:
+                reporte += f"• {perm}\n"
+        else:
+            reporte += "No se detectaron permisos sensibles\n"
+        
+        reporte += "\n📊 ESTADÍSTICAS\n"
+        reporte += "─────────────────────────────────────────────\n"
+        reporte += f"Total de permisos: {len(permissions)}\n"
+        reporte += f"Permisos sensibles: {len(sensitive_perms)}\n"
+        reporte += f"Modo debug: {'SÍ' if parsed_info.get('debuggable') else 'NO'}\n"
+        reporte += f"Firma válida: {'SÍ' if signature_info.get('is_valid') else 'NO'}\n"
+        reporte += f"Hallazgos: {len(hallazgos)}\n"
+        
+        if hallazgos:
+            reporte += "\n⚠️  HALLAZGOS DE SEGURIDAD:\n"
+            for hallazgo in hallazgos:
+                reporte += f"• {hallazgo}\n"
+        
+        return {
+            'reporte_completo': reporte,
+            'permisos_totales': len(permissions),
+            'permisos_sensibles': sensitive_perms,
+            'modo_debug': parsed_info.get('debuggable', False),
+            'firma_valida': signature_info.get('is_valid', False),
+            'hallazgos': hallazgos,
+            'min_sdk': parsed_info.get('min_sdk', 'No disponible')
+        }
+
+    def _parsear_aapt_directo(self, aapt_output: str) -> Dict:
+        """Parsear salida de aapt directamente como fallback"""
+        parsed_info = {
+            "package": None, "version_name": None, "version_code": None,
+            "target_sdk": None, "min_sdk": None, "permissions": [],
+            "app_label": None, "debug_mode": False, "debuggable": False,
+            "package_name": "", "app_name": "", "build_type": "Release"
+        }
+        
+        if not aapt_output or "error" in aapt_output.lower():
+            return parsed_info
+            
+        lines = aapt_output.splitlines()
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            if line.startswith("package:"):
+                self._parse_package_line_directo(line, parsed_info)
+            elif line.startswith("targetSdkVersion:"):
+                parsed_info["target_sdk"] = self._extract_value_directo(line, "targetSdkVersion:")
+            elif line.startswith("sdkVersion:"):
+                parsed_info["min_sdk"] = self._extract_value_directo(line, "sdkVersion:")
+            elif line.startswith("uses-permission:"):
+                self._parse_permission_line_directo(line, parsed_info)
+            elif line.startswith("application-label:") and not parsed_info["app_label"]:
+                parsed_info["app_label"] = self._extract_value_directo(line, "application-label:")
+                parsed_info["app_name"] = self._extract_value_directo(line, "application-label:")
+            
+            if 'application-debuggable' in line.lower():
+                parsed_info["debug_mode"] = True
+                parsed_info["debuggable"] = True
+        
+        parsed_info["package_name"] = parsed_info["package"]
+        return parsed_info
+
+    def _parse_package_line_directo(self, line: str, parsed: Dict):
+        """Parsear línea de package directamente"""
+        try:
+            name_start = line.find("name='")
+            if name_start != -1:
+                name_end = line.find("'", name_start + 6)
+                if name_end != -1:
+                    parsed["package"] = line[name_start + 6 : name_end]
+                    parsed["package_name"] = line[name_start + 6 : name_end]
+
+            vc_start = line.find("versionCode='")
+            if vc_start != -1:
+                vc_end = line.find("'", vc_start + 13)
+                if vc_end != -1:
+                    parsed["version_code"] = line[vc_start + 13 : vc_end]
+
+            vn_start = line.find("versionName='")
+            if vn_start != -1:
+                vn_end = line.find("'", vn_start + 13)
+                if vn_end != -1:
+                    parsed["version_name"] = line[vn_start + 13 : vn_end]
+        except Exception:
+            pass
+
+    def _parse_permission_line_directo(self, line: str, parsed: Dict):
+        """Parsear línea de permisos directamente"""
+        try:
+            perm_start = line.find("name='")
+            if perm_start != -1:
+                perm_end = line.find("'", perm_start + 6)
+                if perm_end != -1:
+                    permission = line[perm_start + 6 : perm_end]
+                    parsed["permissions"].append(permission)
+        except Exception:
+            pass
+
+    def _extract_value_directo(self, line: str, prefix: str = "") -> str:
+        """Extraer valor directamente"""
+        try:
+            if prefix:
+                line = line.split(prefix, 1)[1].strip()
+            return line.strip().strip("'\"")
+        except Exception:
+            return ""
 
     def _parse_signature_info(self, apksigner_output: str, jarsigner_output: str) -> Dict:
         """Parsear información de firma - MEJORADO para extraer empresa"""
@@ -151,6 +401,9 @@ class AppServices:
                 return self.components["signature_verifier"].parsear_info_firma(
                     apksigner_output, jarsigner_output
                 )
+            elif hasattr(self.apk_analyzer, 'parsear_informacion_firma'):
+                # Usar el método del analyzer si está disponible
+                return self.apk_analyzer.parsear_informacion_firma(apksigner_output, jarsigner_output)
             else:
                 # ✅ FALLBACK: Parseo básico si no hay signature_verifier
                 return self._parse_signature_basic(apksigner_output, jarsigner_output)
@@ -169,7 +422,7 @@ class AppServices:
         version_set = set()
 
         # Parsear apksigner
-        if apksigner_output:
+        if apksigner_output and "error" not in apksigner_output.lower():
             lines = apksigner_output.split("\n")
             for line in lines:
                 line = line.strip()
@@ -206,7 +459,7 @@ class AppServices:
         signature_versions = sorted(list(version_set))
 
         # Parsear jarsigner para empresa (solo si no se encontró en apksigner)
-        if jarsigner_output and company_name == "Desconocida":
+        if jarsigner_output and company_name == "Desconocida" and "error" not in jarsigner_output.lower():
             lines = jarsigner_output.split("\n")
             for line in lines:
                 line = line.strip()
@@ -272,53 +525,65 @@ class AppServices:
         }
 
     def _generar_log_completo(self, results, parsed_info, signature_info, pci_analysis):
-        """Generar log completo incluyendo PCI DSS - MEJORADO"""
+        """Generar log completo incluyendo PCI DSS - CORREGIDO para incluir comandos"""
         print(f"🪵 GENERANDO LOG COMPLETO...")
         
-        # ✅ CORREGIDO: Eliminar encabezado redundante
         log_content = ""
         
-        # Información básica del APK
+        # Información básica del APK usando format_utils
         apk_size_mb = self.format_utils.get_apk_size_mb(self.apk_path) if hasattr(self.format_utils, 'get_apk_size_mb') else None
         
         log_content += self.format_utils.formatear_resumen_apk(
             parsed_info, signature_info, 
             self.apk_name,
             apk_size_mb,
-            pci_analysis  # ✅ AGREGAR PCI DSS AL RESUMEN
+            pci_analysis
         )
         
-        # ✅ MEJORADO: Solo agregar sección PCI DSS si no está en el resumen
+        # ✅ CORREGIDO: AGREGAR SECCIÓN DE COMANDOS COMPLETOS
+        log_content += "\n" + "═" * 80 + "\n"
+        log_content += "🔧 COMANDOS EJECUTADOS - LOGS COMPLETOS\n"
+        log_content += "═" * 80 + "\n\n"
+        
+        # ✅ AÑADIR COMANDOS AAPT COMPLETOS
+        if results.get('aapt'):
+            log_content += "=== AAPT DUMP BADGING ===\n"
+            log_content += "═" * 50 + "\n"
+            log_content += results['aapt'] + "\n\n"
+        else:
+            log_content += "=== AAPT DUMP BADGING ===\n"
+            log_content += "═" * 50 + "\n"
+            log_content += "No disponible\n\n"
+        
+        # ✅ AÑADIR COMANDOS APKSIGNER COMPLETOS
+        if results.get('apksigner'):
+            log_content += "=== APKSIGNER VERIFY ===\n"
+            log_content += "═" * 50 + "\n"
+            log_content += results['apksigner'] + "\n\n"
+        else:
+            log_content += "=== APKSIGNER VERIFY ===\n"
+            log_content += "═" * 50 + "\n"
+            log_content += "No disponible\n\n"
+        
+        # ✅ AÑADIR COMANDOS JARSIGNER COMPLETOS
+        if results.get('jarsigner'):
+            log_content += "=== JARSIGNER VERIFY ===\n"
+            log_content += "═" * 50 + "\n"
+            log_content += results['jarsigner'] + "\n\n"
+        else:
+            log_content += "=== JARSIGNER VERIFY ===\n"
+            log_content += "═" * 50 + "\n"
+            log_content += "No disponible\n\n"
+        
         if pci_analysis and isinstance(pci_analysis, dict) and 'reporte_completo' in pci_analysis:
             # Verificar si el PCI DSS ya está incluido en el resumen formateado
             pci_en_resumen = "🛡️  RESUMEN PCI DSS" in log_content
             
             if not pci_en_resumen:
-                log_content += "\n" + "═" * 45 + "\n"
+                log_content += "═" * 80 + "\n"
                 log_content += "🛡️ ANÁLISIS PCI DSS DETALLADO\n"
-                log_content += "═" * 45 + "\n"
+                log_content += "═" * 80 + "\n\n"
                 log_content += pci_analysis['reporte_completo'] + "\n"
-        
-        # Logs de herramientas
-        log_content += "\n" + "═" * 45 + "\n"
-        log_content += "🔧 LOGS DE HERRAMIENTAS\n"
-        log_content += "═" * 45 + "\n"
-        
-        # ✅ AÑADIR COMANDOS EJECUTADOS
-        if results.get('aapt'):
-            log_content += "\n=== AAPT DUMP BADGING ===\n"
-            log_content += results['aapt'] + "\n"
-        
-        if results.get('apksigner'):
-            log_content += "\n=== APKSIGNER VERIFY ===\n"
-            log_content += results['apksigner'] + "\n"
-        
-        if results.get('jarsigner'):
-            log_content += "\n=== JARSIGNER VERIFY ===\n"
-            log_content += results['jarsigner'] + "\n"
-        
-        if not results:
-            log_content += "No hay logs de herramientas disponibles\n"
         
         print(f"🪵 LOG CONTENT GENERADO (primeros 1000 chars): {log_content[:1000]}...")
         
@@ -445,4 +710,10 @@ class AppServices:
         if not analysis:
             return "No hay análisis PCI DSS disponible"
 
-        return self.components["pci_analyzer"].generar_reporte_pci(analysis)
+        # Si el pci_analyzer tiene método generar_reporte_pci, usarlo
+        if (hasattr(self.pci_analyzer, 'generar_reporte_pci') and 
+            callable(getattr(self.pci_analyzer, 'generar_reporte_pci'))):
+            return self.pci_analyzer.generar_reporte_pci(analysis)
+        else:
+            # Devolver el reporte básico
+            return analysis.get('reporte_completo', 'Reporte PCI DSS no disponible')
