@@ -41,11 +41,22 @@ class APKManager:
             command=lambda: self._ejecutar_instalacion(parent, platform_tools, apk_path, apk_name)
         )
 
+        # VERIFICAR SI EL PACKAGE ESTÁ INSTALADO ANTES DE MOSTRAR LA OPCIÓN
         if package_name:
-            menu.add_command(
-                label=f"Desinstalar {app_name}",
-                command=lambda: self._ejecutar_desinstalacion(parent, platform_tools, package_name, app_name)
-            )
+            # Verificar si la aplicación está instalada en el dispositivo
+            esta_instalada = self._verificar_aplicacion_instalada(platform_tools, package_name)
+            
+            if esta_instalada:
+                menu.add_command(
+                    label=f"Desinstalar {app_name}",
+                    command=lambda: self._ejecutar_desinstalacion(parent, platform_tools, package_name, app_name)
+                )
+            else:
+                # Opción deshabilitada si no está instalada
+                menu.add_command(
+                    label=f"Desinstalar {app_name} (no instalada)",
+                    state="disabled"
+                )
 
         menu.add_command(
             label="Desinstalar paquete personalizado...",
@@ -76,6 +87,51 @@ class APKManager:
             menu.tk_popup(x, y)
         finally:
             menu.grab_release()
+
+    def _verificar_aplicacion_instalada(self, platform_tools: str, package_name: str) -> bool:
+        """Verificar si una aplicación está instalada en el dispositivo conectado"""
+        try:
+            if not platform_tools:
+                return False
+
+            platform_path = Path(platform_tools)
+            adb_path = platform_path / "adb.exe"
+            if not adb_path.exists():
+                adb_path = platform_path / "adb"
+            if not adb_path.exists():
+                return False
+
+            # Verificar dispositivos conectados
+            success, devices = self.services.get_connected_devices(platform_tools)
+            if not success or not devices:
+                return False
+
+            dispositivo = devices[0] if devices else None
+
+            # Comando para verificar si el paquete está instalado
+            comando = [str(adb_path)]
+            if dispositivo and dispositivo != "unknown":
+                comando.extend(["-s", dispositivo])
+            
+            comando.extend(["shell", "pm", "list", "packages", package_name])
+            
+            result = subprocess.run(
+                comando,
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=str(platform_path)
+            )
+            
+            # Si encuentra el paquete en la lista, está instalado
+            if result.returncode == 0 and package_name in result.stdout:
+                return True
+            else:
+                return False
+                
+        except Exception as e:
+            self.logger.log_error(f"Error verificando aplicación instalada: {e}")
+            return False
 
     def _ejecutar_instalacion(self, parent, platform_tools: str, apk_path: Path, apk_name: str):
         """Ejecutar instalación de APK"""
@@ -560,7 +616,7 @@ class APKManager:
         """Solicitar package name para desinstalar"""
         dialog = tk.Toplevel(parent)
         dialog.title("Desinstalar Paquete Personalizado")
-        dialog.geometry("400x200")
+        dialog.geometry("450x220")  
         dialog.resizable(False, False)
         dialog.configure(bg=self.styles.COLORS['primary_bg'])
         dialog.transient(parent)
@@ -580,32 +636,71 @@ class APKManager:
             justify="left"
         ).pack(anchor="w", pady=(0, 10))
 
-        package_entry = tk.Entry(main_frame, font=("Segoe UI", 10), width=40)
-        package_entry.pack(fill="x", pady=(0, 15))
+        # Frame para el entry con placeholder
+        entry_frame = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
+        entry_frame.pack(fill="x", pady=(0, 15))
+
+        package_entry = tk.Entry(entry_frame, font=("Segoe UI", 10), width=40)
+        package_entry.pack(fill="x")
         package_entry.focus_set()
 
-        if current_analysis and 'parsed_info' in current_analysis:
-            current_package = current_analysis['parsed_info'].get('package', '')
-            if current_package:
-                package_entry.insert(0, current_package)
+        # ✅ SOLO PLACEHOLDER - SIN REEMPLAZAR CON EL PACKAGE ACTUAL
+        placeholder_text = "Ejemplo: com.example.miapp"
+        package_entry.insert(0, placeholder_text)
+        package_entry.config(fg=self.styles.COLORS['text_secondary'])  # Color gris para placeholder
+
+        def on_entry_click(event):
+            """Manejar clic en el entry"""
+            if package_entry.get() == placeholder_text:
+                package_entry.delete(0, tk.END)
+                package_entry.config(fg=self.styles.COLORS['text_primary'])  # Color normal
+
+        def on_focusout(event):
+            """Manejar pérdida de foco"""
+            if package_entry.get() == '':
+                package_entry.insert(0, placeholder_text)
+                package_entry.config(fg=self.styles.COLORS['text_secondary'])
+
+        # Vincular eventos
+        package_entry.bind('<FocusIn>', on_entry_click)
+        package_entry.bind('<FocusOut>', on_focusout)
 
         btn_frame = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
         btn_frame.pack(fill="x")
 
         BotonRedondeado(btn_frame, "Cancelar", dialog.destroy, width=100,
-                       style='secondary').pack(side="right", padx=(10, 0))
+                    style='secondary').pack(side="right", padx=(10, 0))
         BotonRedondeado(btn_frame, "Desinstalar",
-                       lambda: self._confirmar_desinstalacion_personalizada(
-                           dialog, package_entry.get().strip(), platform_tools, parent),
-                       width=100, style='danger').pack(side="right")
+                    lambda: self._confirmar_desinstalacion_personalizada(
+                        dialog, package_entry.get().strip(), platform_tools, parent, placeholder_text),
+                    width=100, style='danger').pack(side="right")
 
-    def _confirmar_desinstalacion_personalizada(self, dialog, package_name: str, platform_tools: str, parent):
+    def _confirmar_desinstalacion_personalizada(self, dialog, package_name: str, platform_tools: str, parent, placeholder_text: str):
         """Confirmar desinstalación personalizada"""
-        if not package_name:
+        # Verificar que no sea el placeholder o esté vacío
+        if not package_name or package_name == placeholder_text:
             messagebox.showwarning("Advertencia", "Ingresa un nombre de paquete válido")
             return
+        
+        # Verificar formato básico de package name
+        if not self._es_package_name_valido(package_name):
+            resultado = messagebox.askyesno(
+                "Confirmar Package Name",
+                f"El package name '{package_name}' no tiene el formato típico (com.ejemplo.app).\n\n"
+                f"¿Estás seguro de que quieres desinstalar este paquete?"
+            )
+            if not resultado:
+                return
+
         dialog.destroy()
         self._ejecutar_desinstalacion(parent, platform_tools, package_name, "la aplicación personalizada")
+
+    def _es_package_name_valido(self, package_name: str) -> bool:
+        """Verificar si el package name tiene un formato válido"""
+        # Formato típico: com.ejemplo.app, org.example.app, etc.
+        import re
+        pattern = r'^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$'
+        return bool(re.match(pattern, package_name))
 
     def _ver_dispositivos_conectados(self, parent, platform_tools: str):
         """Mostrar información de dispositivos conectados"""

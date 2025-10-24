@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Tuple, List, Optional
 import sys
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
+import platform
 
 class APKSigner:
     def __init__(self, logger=None):
@@ -82,33 +83,54 @@ class APKSigner:
         self._log(f"apksigner no encontrado en: {build_path}", "error")
         return None
     
-    def seleccionar_destino_firma(self, apk_path: Path, parent_window=None) -> Optional[Path]:
-        """Dialogo para seleccionar donde guardar el APK firmado"""
+    def seleccionar_carpeta_destino(self, apk_path: Path, parent_window=None) -> Optional[Path]:
+        """Dialogo para seleccionar donde guardar la carpeta de firmas"""
         try:
-            # Sugerir nombre por defecto
-            nombre_sugerido = f"{apk_path.stem}-signed{apk_path.suffix}"
+            # Sugerir nombre por defecto para la carpeta
+            nombre_carpeta = f"signed_{apk_path.stem}"
             
-            # Dialogo para guardar archivo
-            archivo_destino = filedialog.asksaveasfilename(
+            # Dialogo para seleccionar carpeta
+            carpeta_destino = filedialog.askdirectory(
                 parent=parent_window,
-                title="Guardar APK firmado como...",
-                initialfile=nombre_sugerido,
-                defaultextension=apk_path.suffix,
-                filetypes=[("APK files", f"*{apk_path.suffix}"), ("Todos los archivos", "*.*")]
+                title="Selecciona la carpeta donde guardar los archivos firmados...",
+                initialdir=apk_path.parent
             )
             
-            if archivo_destino:
-                destino = Path(archivo_destino)
-                self._log(f"Destino seleccionado: {destino}")
+            if carpeta_destino:
+                destino = Path(carpeta_destino) / nombre_carpeta
+                self._log(f"Carpeta destino seleccionada: {destino}")
                 return destino
             else:
-                self._log("Usuario canceló la selección de destino")
+                self._log("Usuario canceló la selección de carpeta")
                 return None
                 
         except Exception as e:
-            self._log(f"Error seleccionando destino: {str(e)}", "error")
+            self._log(f"Error seleccionando carpeta destino: {str(e)}", "error")
             return None
     
+    def abrir_carpeta_explorador(self, carpeta_path: Path):
+        """Abrir la carpeta en el explorador de archivos del sistema"""
+        try:
+            if not carpeta_path.exists():
+                self._log(f"La carpeta no existe: {carpeta_path}", "error")
+                return False
+            
+            sistema = platform.system()
+            
+            if sistema == "Windows":
+                os.startfile(carpeta_path)
+            elif sistema == "Darwin":  # macOS
+                subprocess.run(["open", str(carpeta_path)])
+            else:  # Linux y otros
+                subprocess.run(["xdg-open", str(carpeta_path)])
+            
+            self._log(f"Carpeta abierta en explorador: {carpeta_path}")
+            return True
+            
+        except Exception as e:
+            self._log(f"Error abriendo carpeta: {str(e)}", "error")
+            return False
+
     def firmar_apk(self, apk_path: Path, jks_path: Path, password: str, build_tools_path: str, alias: str = None, parent_window=None) -> Tuple[bool, str]:
         try:
             if not apk_path.exists():
@@ -124,14 +146,29 @@ class APKSigner:
             if not apksigner_bin:
                 return False, "apksigner no encontrado en build-tools"
             
-            # ✅ NUEVO: Preguntar donde guardar el APK firmado
-            apk_signed_path = self.seleccionar_destino_firma(apk_path, parent_window)
-            if not apk_signed_path:
+            # Permitir al usuario seleccionar dónde guardar la carpeta
+            carpeta_destino = self.seleccionar_carpeta_destino(apk_path, parent_window)
+            if not carpeta_destino:
                 return False, "Operación cancelada por el usuario"
             
-            # Verificar que no estamos sobreescribiendo el archivo original
-            if apk_signed_path.resolve() == apk_path.resolve():
-                return False, "No puedes sobreescribir el archivo original. Elige un nombre diferente."
+            # Crear carpeta con nombre personalizado
+            carpeta_destino.mkdir(parents=True, exist_ok=True)
+            
+            # Definir rutas de archivos firmados dentro de la carpeta
+            apk_signed_path = carpeta_destino / f"{apk_path.stem}-signed{apk_path.suffix}"
+            
+            # Verificar si ya existe y preguntar si se debe sobrescribir
+            if apk_signed_path.exists():
+                if parent_window:
+                    respuesta = messagebox.askyesno(
+                        "Archivo existente",
+                        f"El archivo {apk_signed_path.name} ya existe.\n¿Deseas sobrescribirlo?"
+                    )
+                    if not respuesta:
+                        return False, "Operación cancelada por el usuario"
+                else:
+                    # Si no hay ventana padre, simplemente eliminar
+                    apk_signed_path.unlink()
             
             self._log(f"Firmando APK: {apk_path.name} -> {apk_signed_path.name}")
             
@@ -159,22 +196,47 @@ class APKSigner:
                     # Verificar la firma del archivo creado
                     verificacion = self.verificar_firma(apk_signed_path, build_tools_path)
                     if verificacion[0]:
-                        return True, f"APK firmado y verificado correctamente:\n{apk_signed_path}"
+                        # Abrir carpeta automáticamente al finalizar
+                        self.abrir_carpeta_explorador(carpeta_destino)
+                        
+                        # ✅ SOLO RETORNA EL RESULTADO SIN MOSTRAR DIÁLOGO
+                        return True, f"APK firmado correctamente en: {carpeta_destino}"
                     else:
-                        return False, f"APK firmado pero falló la verificación:\n{verificacion[1]}"
+                        # Si la verificación falla, limpiar el archivo mal firmado
+                        if apk_signed_path.exists():
+                            apk_signed_path.unlink()
+                        return False, f"APK firmado pero falló la verificación: {verificacion[1]}"
                 else:
                     return False, "Error: El archivo firmado no se creó"
             else:
                 # Limpiar archivo si falló
                 if apk_signed_path.exists():
                     apk_signed_path.unlink()
-                return False, f"Error en firma: {output}"
+                
+                # Procesar error para mensaje más específico
+                mensaje_error = self._procesar_error_firma(output)
+                return False, mensaje_error
                 
         except Exception as e:
             error_msg = f"Error durante la firma: {str(e)}"
             self._log(error_msg, "error")
             return False, error_msg
-    
+
+    def _procesar_error_firma(self, output: str) -> str:
+        """Procesar el output de error para dar mensajes más específicos"""
+        output_lower = output.lower()
+        
+        if "password" in output_lower or "contraseña" in output_lower:
+            return "Error: Contraseña incorrecta del keystore"
+        elif "keystore" in output_lower and "not found" in output_lower:
+            return "Error: Keystore no encontrado o inválido"
+        elif "certificate" in output_lower or "alias" in output_lower:
+            return "Error: Alias del certificado no encontrado"
+        elif "signature" in output_lower:
+            return "Error: Problema con la firma del APK"
+        else:
+            return f"Error en firma: {output}"
+
     def verificar_firma(self, apk_path: Path, build_tools_path: str) -> Tuple[bool, str]:
         try:
             if not apk_path.exists():

@@ -720,21 +720,22 @@ class APKInspectorApp:
 
                 progress_dialog.destroy()
 
+                # ⚠️ AQUÍ ESTÁ EL PROBLEMA - ESTOS DIÁLOGOS SE MUESTRAN SIEMPRE
                 if exito:
-                    messagebox.showinfo("Éxito", 
+                    messagebox.showinfo("Éxito",  # ⬅️ ESTE DIÁLOGO SE MUESTRA
                         f"✅ APK firmada correctamente!\n\n"
                         f"{output}"
                     )
                     self.logger.log_info(f"APK firmada: {output}")
                 else:
-                    messagebox.showerror("Error", 
+                    messagebox.showerror("Error",  # ⬅️ Y ESTE TAMBIÉN
                         f"❌ Error al firmar APK:\n\n{output}"
                     )
                     self.logger.log_error(f"Error firmando APK: {output}")
 
             except Exception as e:
                 progress_dialog.destroy()
-                messagebox.showerror("Error", 
+                messagebox.showerror("Error",  # ⬅️ Y ESTE EN CASO DE EXCEPCIÓN
                     f"❌ Error durante la firma:\n\n{str(e)}"
                 )
                 self.logger.log_error(f"Excepción firmando APK: {e}")

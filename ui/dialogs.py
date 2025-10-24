@@ -462,12 +462,16 @@ class InstallDialog:
         info_frame = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
         info_frame.pack(fill="x", pady=(15, 0))
         
+        # ✅ VERIFICAR HERRAMIENTAS DISPONIBLES
+        herramientas_disponibles, mensaje_herramientas = self._verificar_herramientas_disponibles()
+        
         info_text = (
             "💡 Requisitos:\n"
             "• Dispositivo Android conectado vía USB\n"
             "• Depuración USB activada\n"
             "• Drivers ADB instalados\n"
-            f"• Platform Tools: {self.platform_tools_path}"
+            f"• Platform Tools: {self.platform_tools_path}\n\n"
+            f"{mensaje_herramientas}"
         )
         
         info_label = tk.Label(
@@ -491,6 +495,49 @@ class InstallDialog:
             width=100,
             style='secondary'
         ).pack(side="right")
+    
+    def _verificar_herramientas_disponibles(self):
+        """Verificar si las herramientas necesarias están disponibles"""
+        try:
+            platform_path = Path(self.platform_tools_path)
+            
+            # Verificar ADB
+            adb_path = platform_path / "adb.exe"
+            if not adb_path.exists():
+                adb_path = platform_path / "adb"
+            
+            if not adb_path.exists():
+                return False, (
+                    "❌ ADB no encontrado\n"
+                    "🔗 Descarga: https://developer.android.com/studio/releases/platform-tools"
+                )
+            
+            # Verificar AAPT
+            aapt_path = platform_path / "aapt.exe"
+            if not aapt_path.exists():
+                aapt_path = platform_path / "aapt"
+            
+            if not aapt_path.exists():
+                return False, (
+                    "❌ AAPT no encontrado\n"
+                    "🔗 Descarga: https://developer.android.com/studio/releases/build-tools"
+                )
+            
+            # Verificar APKSigner
+            apksigner_path = platform_path / "apksigner.bat"
+            if not apksigner_path.exists():
+                apksigner_path = platform_path / "apksigner"
+            
+            if not apksigner_path.exists():
+                return False, (
+                    "❌ APKSigner no encontrado\n"
+                    "🔗 Descarga: https://developer.android.com/studio/releases/build-tools"
+                )
+            
+            return True, "✅ Todas las herramientas están disponibles"
+            
+        except Exception as e:
+            return False, f"❌ Error verificando herramientas: {str(e)}"
     
     def _crear_entry_solo_lectura(self, parent, width=40):
         entry = tk.Entry(
@@ -522,6 +569,9 @@ class InstallDialog:
             if not adb_path.exists():
                 adb_path = Path(self.platform_tools_path) / "adb.exe"
             
+            if not adb_path.exists():
+                return False, ["ADB no encontrado"]
+            
             result = subprocess.run(
                 [str(adb_path), "devices"],
                 capture_output=True,
@@ -535,9 +585,18 @@ class InstallDialog:
             return len(devices) > 0, devices
             
         except Exception as e:
-            return False, []
+            return False, [f"Error: {str(e)}"]
     
     def _instalar_apk(self):
+        # ✅ VERIFICAR HERRAMIENTAS ANTES DE PROCEDER
+        herramientas_ok, mensaje_herramientas = self._verificar_herramientas_disponibles()
+        if not herramientas_ok:
+            messagebox.showerror(
+                "Herramientas Faltantes", 
+                f"No se pueden ejecutar las operaciones:\n\n{mensaje_herramientas}"
+            )
+            return
+        
         adb_ok, devices = self._verificar_adb()
         
         if not adb_ok:
@@ -597,6 +656,15 @@ class InstallDialog:
     def _desinstalar_paquete(self, package_name):
         if not package_name or package_name == "com.ejemplo.paquete":
             messagebox.showwarning("Advertencia", "Ingresa un nombre de paquete válido")
+            return
+        
+        # ✅ VERIFICAR HERRAMIENTAS ANTES DE PROCEDER
+        herramientas_ok, mensaje_herramientas = self._verificar_herramientas_disponibles()
+        if not herramientas_ok:
+            messagebox.showerror(
+                "Herramientas Faltantes", 
+                f"No se pueden ejecutar las operaciones:\n\n{mensaje_herramientas}"
+            )
             return
         
         adb_ok, devices = self._verificar_adb()

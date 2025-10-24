@@ -8,6 +8,13 @@ import re
 from pathlib import Path
 import datetime
 
+# Importar el CustomCombobox
+try:
+    from components.custom_combobox import CustomCombobox
+except ImportError:
+    # Fallback si no encuentra el componente
+    CustomCombobox = None
+
 class LogcatManager:
     def __init__(self, root, adb_manager, styles, logger, apk_analyzer=None, config_manager=None):
         self.root = root
@@ -28,7 +35,7 @@ class LogcatManager:
         self.current_screen = 0
         self.monitoring_stats = False
         self.stats_process = None
-        self.estadisticas_preguntadas = False
+        # ✅ ELIMINADO: No preguntar estadísticas automáticamente
 
     def _get_adb_path(self):
         """Obtener la ruta de ADB desde la configuración"""
@@ -158,20 +165,16 @@ class LogcatManager:
 
     def _actualizar_packages_ui_recarga(self, packages):
         """Actualizar UI después de recargar packages"""
-        self.package_combo['values'] = packages
+        if hasattr(self, 'package_combobox') and self.package_combobox:
+            self.package_combobox.set_items(packages)
+        
         self.status_label.config(
             text=f"✅ {len(packages)} packages recargados correctamente",
             fg="#4caf50"
         )
-        
-        # Mantener el package seleccionado si aún existe
-        current_package = self.package_var.get()
-        if current_package and current_package not in packages:
-            self.package_var.set("")
-            self.filter_info_label.config(text="🎯 Filtro: Ninguno")        
 
     def _obtener_pid_package(self, package_name):
-        """Obtener el PID de un package usando pidof"""
+        """Obtener el PID de un package usando pidof de forma robusta"""
         try:
             result = self._ejecutar_adb(f"shell pidof {package_name}")
             if result and result.returncode == 0 and result.stdout.strip():
@@ -200,10 +203,25 @@ class LogcatManager:
         self._posicionar_ventana_inteligente()
         self.logcat_window.bind("<Control-s>", lambda e: self._guardar_log())
         self.logcat_window.bind("<Control-l>", lambda e: self._limpiar_logcat())
-        self.logcat_window.bind("<Control-f>", lambda e: self.package_combo.focus())
+        self.logcat_window.bind("<Control-f>", lambda e: self.package_combobox.focus() if hasattr(self, 'package_combobox') else None)
+        
+        # ✅ NUEVO: Binding para cerrar dropdown al hacer clic fuera
+        self.logcat_window.bind("<Button-1>", self._cerrar_dropdown_al_clic_exterior)
         
         self._crear_ui_logcat_mejorada()
         self._verificar_y_cargar_automaticamente()
+
+    def _cerrar_dropdown_al_clic_exterior(self, event):
+        """Cerrar el dropdown del combobox al hacer clic fuera"""
+        if hasattr(self, 'package_combobox') and self.package_combobox:
+            # Verificar si el clic fue fuera del combobox
+            combobox_widget = self.package_combobox.main_frame
+            if (event.widget != combobox_widget and 
+                not combobox_widget.winfo_containing(event.x_root, event.y_root)):
+                
+                # Ocultar dropdown si está visible
+                if hasattr(self.package_combobox, 'dropdown_visible') and self.package_combobox.dropdown_visible:
+                    self.package_combobox._hide_dropdown()
 
     def _detectar_pantalla_actual(self):
         """Detectar en qué pantalla está la ventana principal de forma más precisa"""
@@ -339,27 +357,37 @@ class LogcatManager:
             fg=self.styles.COLORS['text_primary']
         ).pack(side="left", padx=(0, 10))
 
-        # ✅ CORREGIDO: Frame para combo y botones - DEFINIDO ANTES DE USAR
+        # Frame para combo y botones
         combo_frame = tk.Frame(package_selector_frame, bg=self.styles.COLORS['secondary_bg'])
         combo_frame.pack(side="left", fill="x", expand=True)
 
-        self.package_var = tk.StringVar()
-        self.package_combo = ttk.Combobox(
-            combo_frame,
-            textvariable=self.package_var,
-            font=("Segoe UI", 10),
-            height=8,
-            values=self.all_packages
-        )
-        self.package_combo.pack(side="left", fill="x", expand=True, padx=(0, 10))
-        
-        # ✅ AUTOMATIZACIÓN MEJORADA - Sin bloqueos de escritura
-        self.package_combo.bind('<KeyRelease>', self._autocompletar_package_mejorado)
-        self.package_combo.bind('<<ComboboxSelected>>', self._on_package_selected)
-        self.package_combo.bind('<Return>', lambda e: self._aplicar_filtro_automatico())
-        self.package_combo.bind('<FocusIn>', lambda e: self.package_combo.selection_range(0, tk.END))
+        # ✅ USAR CUSTOM COMBOBOX
+        if CustomCombobox:
+            self.package_combobox = CustomCombobox(
+                parent=combo_frame,
+                all_items=self.all_packages,
+                styles=self.styles,
+                on_select_callback=self._on_package_selected,
+                width=40
+            )
+            self.package_combobox.pack(side="left", fill="x", expand=True, padx=(0, 10))
+            
+            # ✅ NUEVO: Binding para cerrar dropdown al hacer clic en la ventana
+            self.package_combobox.main_frame.bind("<Button-1>", lambda e: "break")  # Prevenir propagación
+        else:
+            # Fallback a combobox tradicional
+            self.package_var = tk.StringVar()
+            self.package_combo = ttk.Combobox(
+                combo_frame,
+                textvariable=self.package_var,
+                font=("Segoe UI", 10),
+                height=8,
+                values=self.all_packages
+            )
+            self.package_combo.pack(side="left", fill="x", expand=True, padx=(0, 10))
+            self.package_combo.bind('<<ComboboxSelected>>', self._on_package_selected)
 
-        # ✅ CORREGIDO: Botones de acción para packages - AHORA DENTRO DEL COMBO_FRAME
+        # Botones de acción para packages
         btn_package_frame = tk.Frame(combo_frame, bg=self.styles.COLORS['secondary_bg'])
         btn_package_frame.pack(side="left", padx=(5, 0))
 
@@ -376,7 +404,7 @@ class LogcatManager:
         self.btn_estadisticas = self._crear_boton_moderno(
             btn_package_frame,
             "📊 Estadísticas App",
-            lambda: self._mostrar_estadisticas_app(self.package_var.get()) if self.package_var.get() else messagebox.showwarning("Advertencia", "Selecciona un package primero"),
+            lambda: self._mostrar_estadisticas_app(self._get_current_package()),
             "#9c27b0"
         )
         self.btn_estadisticas.pack(side="left", padx=(0, 5))
@@ -577,7 +605,7 @@ class LogcatManager:
 
         self.logcat_window.protocol("WM_DELETE_WINDOW", self._cerrar_logcat)
 
-        # ✅ NUEVO: Inicializar contadores
+        # Inicializar contadores
         self.log_counters = {
             'DEBUG': 0,
             'INFO': 0,
@@ -586,6 +614,14 @@ class LogcatManager:
             'FATAL': 0,
             'VERBOSE': 0
         }
+
+    def _get_current_package(self):
+        """Obtener el package actual del combobox"""
+        if hasattr(self, 'package_combobox'):
+            return self.package_combobox.get()
+        elif hasattr(self, 'package_var'):
+            return self.package_var.get()
+        return ""
 
     def _verificar_y_cargar_automaticamente(self):
         """Verificar dispositivo y cargar packages automáticamente"""
@@ -651,7 +687,9 @@ class LogcatManager:
 
     def _actualizar_packages_ui(self, packages):
         """Actualizar la UI con la lista de packages"""
-        self.package_combo['values'] = packages
+        if hasattr(self, 'package_combobox'):
+            self.package_combobox.set_items(packages)
+        
         self.status_label.config(
             text=f"✅ {len(packages)} packages cargados - Selecciona o escribe para filtrar",
             fg="#4caf50"
@@ -703,7 +741,7 @@ class LogcatManager:
 
     def _configurar_tags_colores_profesionales(self):
         """Configurar colores PROFESIONALES para diferentes niveles de log"""
-        # ✅ COLORES PROFESIONALES MEJORADOS - Esquema oscuro optimizado
+        # COLORES PROFESIONALES MEJORADOS - Esquema oscuro optimizado
         self.logcat_text.tag_configure("VERBOSE", foreground="#6a9955")  # Verde suave
         self.logcat_text.tag_configure("DEBUG", foreground="#4fc3f7")    # Azul claro
         self.logcat_text.tag_configure("INFO", foreground="#e8e8e8")     # Blanco grisáceo (normal)
@@ -714,33 +752,6 @@ class LogcatManager:
         # Tags especiales
         self.logcat_text.tag_configure("PACKAGE_HIGHLIGHT", foreground="#ce9178")  # Naranja suave para packages
         self.logcat_text.tag_configure("TIMESTAMP", foreground="#569cd6")  # Azul para timestamps
-
-    def _autocompletar_package_mejorado(self, event):
-        """Autocompletado MEJORADO - Permite escribir siempre sin importar coincidencias"""
-        # Ignorar teclas de navegación y control
-        if event.keysym in ['Return', 'Escape', 'Up', 'Down', 'Control_L', 'Control_R']:
-            return
-        
-        current_text = self.package_var.get()
-        
-        if not current_text:
-            # Si no hay texto, mostrar todos los packages
-            self.package_combo['values'] = self.all_packages
-            return
-        
-        # ✅ MEJORADO: Búsqueda que no interfiere con la escritura
-        current_lower = current_text.lower()
-        
-        # Filtrar packages que contengan el texto
-        filtered = [pkg for pkg in self.all_packages if current_lower in pkg.lower()]
-        
-        # Actualizar valores del combobox SIN interferir con la escritura
-        self.package_combo['values'] = filtered
-        
-        # Solo mostrar dropdown si hay coincidencias
-        if filtered:
-            # Pequeño delay para no ser intrusivo
-            self.logcat_window.after(100, lambda: self.package_combo.event_generate('<Down>'))
 
     def _mostrar_info_adb(self, event=None):
         """Mostrar información sobre ADB"""
@@ -760,47 +771,33 @@ class LogcatManager:
             "2. Establece la ruta correcta a adb.exe"
         )
 
-    def _on_package_selected(self, event):
-        """Cuando se selecciona un package del combobox - APLICACIÓN AUTOMÁTICA"""
-        package = self.package_var.get()
-        if package:
-            # Aplicar filtro automáticamente
-            self._aplicar_filtro_automatico()
-
-    def _aplicar_filtro_automatico(self):
-        """Aplicar filtro automáticamente cuando se selecciona o escribe un package"""
-        package = self.package_var.get().strip()
-        if not package:
-            return
-        
-        self.current_filter = package
-        self.filter_info_label.config(text=f"🎯 Filtro: {package}")
-        
-        # Obtener PID automáticamente
-        pid = self._obtener_pid_package(package)
-        if pid:
-            self.pid_info_label.config(text=f"📊 PID: {pid}")
-            self.status_label.config(
-                text=f"✅ Filtro aplicado automáticamente: {package} (PID: {pid})",
-                fg="#4caf50"
-            )
+    def _on_package_selected(self, package_name):
+        """Cuando se selecciona un package del combobox - SIN APERTURA AUTOMÁTICA"""
+        if package_name:
+            self.current_filter = package_name
+            self.filter_info_label.config(text=f"🎯 Filtro: {package_name}")
             
-            # ✅ NUEVO: Preguntar si quiere ver estadísticas
-            self.root.after(1000, lambda: self._preguntar_estadisticas(package))
-            
-        else:
-            self.pid_info_label.config(text="📊 PID: No ejecutándose")
-            self.status_label.config(
-                text=f"⚠️ Filtro aplicado automáticamente: {package} - App no ejecutándose",
-                fg="#ff9800"
-            )
+            # Obtener PID automáticamente
+            pid = self._obtener_pid_package(package_name)
+            if pid:
+                self.pid_info_label.config(text=f"📊 PID: {pid}")
+                self.status_label.config(
+                    text=f"✅ Filtro aplicado automáticamente: {package_name} (PID: {pid})",
+                    fg="#4caf50"
+                )
+            else:
+                self.pid_info_label.config(text="📊 PID: No ejecutándose")
+                self.status_label.config(
+                    text=f"⚠️ Filtro aplicado automáticamente: {package_name} - App no ejecutándose",
+                    fg="#ff9800"
+                )
 
     def _detectar_package_apk_inteligente(self):
         """Detección MEJORADA del package name del APK analizado"""
         try:
             package_name = None
             
-            # ✅ MEJORADO: Buscar en múltiples ubicaciones
+            # MEJORADO: Buscar en múltiples ubicaciones
             if self.apk_analyzer:
                 # Intentar obtener del analyzer actual
                 if hasattr(self.apk_analyzer, 'current_analysis'):
@@ -828,39 +825,25 @@ class LogcatManager:
                 
                 # Verificar si el package existe en el dispositivo
                 if package_name in self.all_packages:
-                    self.package_var.set(package_name)
-                    self.package_combo.set(package_name)
+                    if hasattr(self, 'package_combobox'):
+                        self.package_combobox.set(package_name)
+                    elif hasattr(self, 'package_var'):
+                        self.package_var.set(package_name)
                     
                     # Aplicar filtro automáticamente
-                    self.root.after(500, lambda: self._aplicar_filtro_automatico())
+                    self.root.after(500, lambda: self._on_package_selected(package_name))
                     
         except Exception as e:
             self.logger.log_error("Error detectando package automático", e)
 
-    def _preguntar_estadisticas(self, package_name):
-        """Preguntar al usuario si quiere ver estadísticas de la app"""
-        if hasattr(self, 'estadisticas_preguntadas') and self.estadisticas_preguntadas:
-            return
-            
-        self.estadisticas_preguntadas = True
-        
-        respuesta = messagebox.askyesno(
-            "Estadísticas de la Aplicación",
-            f"¿Te gustaría ver las estadísticas de rendimiento de '{package_name}'?\n\n"
-            "Esto abrirá la aplicación en el dispositivo y mostrará:\n"
-            "• Uso de memoria (RAM)\n"
-            "• Uso de CPU\n"
-            "• Consumo de datos\n"
-            "• Información general de rendimiento"
-        )
-        
-        if respuesta:
-            self._mostrar_estadisticas_app(package_name)
-
     def _limpiar_filtro(self):
         """Limpiar filtro actual"""
         self.current_filter = ""
-        self.package_var.set("")
+        if hasattr(self, 'package_combobox'):
+            self.package_combobox.set("")
+        elif hasattr(self, 'package_var'):
+            self.package_var.set("")
+            
         self.filter_info_label.config(text="🎯 Filtro: Ninguno")
         self.pid_info_label.config(text="📊 PID: No detectado")
         self.status_label.config(
@@ -877,8 +860,27 @@ class LogcatManager:
         )
 
     def _iniciar_logcat(self):
-        """Iniciar monitoreo de logcat"""
+        """Iniciar monitoreo de logcat MEJORADO - SIN ABRIR APP AUTOMÁTICAMENTE"""
         if self.is_monitoring:
+            return
+
+        # Verificar conexión antes de iniciar
+        def verificar_conexion():
+            result = self._ejecutar_adb("devices")
+            if result and result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                devices = [line for line in lines[1:] if line.strip() and '\tdevice' in line]
+                return len(devices) > 0
+            return False
+
+        if not verificar_conexion():
+            respuesta = messagebox.askyesno(
+                "Dispositivo no detectado", 
+                "No se detecta un dispositivo Android conectado.\n\n"
+                "¿Quieres intentar reconectar automáticamente?"
+            )
+            if respuesta:
+                self._reconectar_dispositivo()
             return
 
         self.is_monitoring = True
@@ -889,15 +891,16 @@ class LogcatManager:
         # Limpiar logs anteriores
         self._limpiar_logcat()
         
-        # Construir comando logcat
-        cmd = ["logcat", "-v", "time", "-T", "50"]  # Mostrar últimos 50 logs
+        # Construir comando logcat mejorado
+        cmd = ["logcat", "-v", "time", "-T", "100"]  # Mostrar últimos 100 logs
         
         if self.current_filter:
             if self.current_pid:
                 cmd.extend(["--pid", self.current_pid])
             else:
-                cmd.extend([self.current_filter, "*:S"])
-        
+                # Usar filtro por tag/package
+                cmd.extend(["-s", self.current_filter])
+
         def monitorear_logcat():
             try:
                 full_cmd = [self.adb_path] + cmd if self.adb_path != "adb" else cmd
@@ -909,19 +912,32 @@ class LogcatManager:
                     text=True,
                     encoding='utf-8',
                     errors='ignore',
-                    bufsize=1
+                    bufsize=1,
+                    universal_newlines=True
                 )
                 
-                for linea in iter(self.logcat_process.stdout.readline, ''):
-                    if not self.is_monitoring:
-                        break
-                    if linea.strip():
+                # Leer líneas continuamente
+                while self.is_monitoring:
+                    linea = self.logcat_process.stdout.readline()
+                    if not linea and self.is_monitoring:
+                        # Si no hay línea pero seguimos monitoreando, esperar un poco
+                        import time
+                        time.sleep(0.1)
+                        continue
+                    
+                    if linea.strip() and self.is_monitoring:
                         self.root.after(0, self._procesar_linea_logcat, linea)
-                
+                    
+                    # Verificar si el proceso terminó inesperadamente
+                    if self.logcat_process.poll() is not None and self.is_monitoring:
+                        self.root.after(0, self._manejar_desconexion_logcat)
+                        break
+                        
             except Exception as e:
                 self.root.after(0, self._manejar_error_logcat, str(e))
             finally:
-                self.root.after(0, self._detener_logcat)
+                if self.is_monitoring:
+                    self.root.after(0, self._detener_logcat)
 
         threading.Thread(target=monitorear_logcat, daemon=True).start()
         
@@ -930,6 +946,78 @@ class LogcatManager:
             text=f"🔴 Monitoreando Logcat{filter_info}",
             fg="#ff9800"
         )
+
+    def _reconectar_dispositivo(self):
+        """Intentar reconectar el dispositivo"""
+        self.status_label.config(text="🔄 Reconectando dispositivo...", fg="#ff9800")
+        
+        def reconectar():
+            # Reiniciar servidor ADB
+            self._ejecutar_adb("kill-server")
+            import time
+            time.sleep(2)
+            self._ejecutar_adb("start-server")
+            time.sleep(3)
+            
+            # Verificar si se reconectó
+            result = self._ejecutar_adb("devices")
+            if result and any('\tdevice' in line for line in result.stdout.split('\n')):
+                self.root.after(0, lambda: self.status_label.config(
+                    text="✅ Dispositivo reconectado - Puedes iniciar Logcat",
+                    fg="#4caf50"
+                ))
+            else:
+                self.root.after(0, lambda: self.status_label.config(
+                    text="❌ No se pudo reconectar - Verifica conexión USB",
+                    fg="#f44336"
+                ))
+        
+        threading.Thread(target=reconectar, daemon=True).start()
+
+    def _manejar_desconexion_logcat(self):
+        """Manejar desconexión inesperada del logcat"""
+        if self.is_monitoring:
+            self.is_monitoring = False
+            self.logcat_process = None
+            
+            self.btn_iniciar.config(state="normal")
+            self.btn_detener.config(state="disabled")
+            self.monitoring_status.config(text="🔴 Monitoreo: DESCONECTADO", fg="#ff8a80")
+            
+            self.status_label.config(
+                text="❌ Logcat se desconectó inesperadamente - Verifica conexión del dispositivo",
+                fg="#f44336"
+            )
+            
+            # Preguntar si quiere reconectar
+            self.root.after(1000, lambda: self._preguntar_reconexion())
+
+    def _preguntar_reconexion(self):
+        """Preguntar al usuario si quiere reconectar"""
+        if not self.is_monitoring:
+            respuesta = messagebox.askyesno(
+                "Conexión perdida",
+                "El monitoreo de Logcat se ha detenido inesperadamente.\n\n"
+                "¿Quieres intentar reconectar automáticamente?"
+            )
+            if respuesta:
+                self._reconectar_y_reiniciar()
+
+    def _reconectar_y_reiniciar(self):
+        """Reconectar y reiniciar logcat"""
+        self.status_label.config(text="🔄 Reconectando y reiniciando Logcat...", fg="#ff9800")
+        
+        def proceso_reconexion():
+            self._reconectar_dispositivo()
+            import time
+            time.sleep(3)
+            
+            # Verificar si se reconectó
+            result = self._ejecutar_adb("devices")
+            if result and any('\tdevice' in line for line in result.stdout.split('\n')):
+                self.root.after(0, self._iniciar_logcat)
+        
+        threading.Thread(target=proceso_reconexion, daemon=True).start()
 
     def _detener_logcat(self):
         """Detener monitoreo de logcat"""
@@ -974,7 +1062,7 @@ class LogcatManager:
 
         self.logcat_text.config(state='normal')
         
-        # ✅ MEJORADO: Procesamiento visual mejorado
+        # MEJORADO: Procesamiento visual mejorado
         linea_procesada = self._mejorar_visualizacion_linea(linea)
         self.logcat_text.insert(tk.END, linea_procesada, tag)
         self.logcat_text.see(tk.END)
@@ -995,7 +1083,7 @@ class LogcatManager:
         """Determinar el nivel del log para colorear - MEJORADO"""
         linea_upper = linea.upper()
         
-        # ✅ DETECCIÓN MEJORADA con expresiones regulares
+        # DETECCIÓN MEJORADA con expresiones regulares
         if re.search(r'\bE\b|\bERROR\b| E/', linea_upper):
             return "ERROR"
         elif re.search(r'\bW\b|\bWARN\b| W/', linea_upper):
@@ -1028,32 +1116,33 @@ class LogcatManager:
         self.logcat_text.delete(1.0, tk.END)
         self.logcat_text.config(state='normal')
         
-        # ✅ NUEVO: Reiniciar contadores
+        # Reiniciar contadores
         for key in self.log_counters:
             self.log_counters[key] = 0
         self._actualizar_contadores_ui()
         self._actualizar_contador_lineas()
 
     def _guardar_log(self):
-        """Guardar log actual en archivo con nombre mejorado"""
+        """Guardar log actual SIN detener el monitoreo"""
         try:
+            # Obtener contenido actual SIN interferir con el monitoreo
+            self.logcat_text.config(state='normal')
             contenido = self.logcat_text.get('1.0', 'end-1c')
+            self.logcat_text.config(state='normal')
+            
             if not contenido.strip():
                 messagebox.showwarning("Advertencia", "No hay logs para guardar")
                 return
             
-            # ✅ MEJORADO: Nombre de archivo con timestamp, package y filtro
+            # Nombre de archivo con timestamp
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             
-            # Determinar el nombre base según el filtro aplicado
             if self.current_filter:
-                # Limpiar el nombre del filtro para que sea válido como nombre de archivo
                 clean_filter = "".join(c for c in self.current_filter if c.isalnum() or c in ('-', '_'))
                 base_name = f"logcat_{clean_filter}_{timestamp}"
             else:
                 base_name = f"logcat_all_logs_{timestamp}"
             
-            # Si hay un package de APK analizado, incluirlo también
             if self.current_apk_package and self.current_apk_package != self.current_filter:
                 clean_apk = "".join(c for c in self.current_apk_package if c.isalnum() or c in ('-', '_'))
                 base_name = f"logcat_{clean_apk}_{timestamp}"
@@ -1067,14 +1156,16 @@ class LogcatManager:
             )
             
             if filepath:
-                # ✅ MEJORADO: Agregar metadatos al inicio del archivo
+                # Agregar metadatos
+                estado_monitoreo = "ACTIVO" if self.is_monitoring else "INACTIVO"
                 metadata = f"""LOGCAT EXPORTADO - METADATOS
 ================================
 Fecha y hora: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 Package analizado: {self.current_apk_package or 'No especificado'}
 Filtro aplicado: {self.current_filter or 'Todos los logs'}
 PID monitorizado: {self.current_pid or 'No aplicable'}
-Total líneas: {self.logcat_text.get('1.0', 'end-1c').count(chr(10)) + 1}
+Monitoreo activo: {estado_monitoreo}
+Total líneas: {contenido.count(chr(10)) + 1}
 ================================
 LOGS:
 ================================
@@ -1085,15 +1176,14 @@ LOGS:
                     f.write(metadata)
                     f.write(contenido)
                 
-                # ✅ CORREGIDO: Sin backslash en f-string
-                messagebox.showinfo("Éxito", "Log guardado en:\n" + filepath)
+                messagebox.showinfo("Éxito", f"Log guardado en:\n{filepath}\n\nMonitoreo: {estado_monitoreo}")
                 self.status_label.config(
-                    text=f"💾 Log guardado: {Path(filepath).name}",
+                    text=f"💾 Log guardado: {Path(filepath).name} (Monitoreo: {estado_monitoreo})",
                     fg="#4caf50"
                 )
                 
         except Exception as e:
-            messagebox.showerror("Error", "No se pudo guardar el log:\n" + str(e))
+            messagebox.showerror("Error", f"No se pudo guardar el log:\n{str(e)}")
 
     def _cerrar_logcat(self):
         """Manejar cierre de la ventana"""
@@ -1113,7 +1203,8 @@ LOGS:
         self.config_manager = config_manager
         self.adb_path = self._get_adb_path()
 
-    # Los métodos de estadísticas que ya estaban implementados
+    # ========== MÉTODOS DE ESTADÍSTICAS MEJORADOS ==========
+
     def _abrir_app_en_dispositivo(self, package_name):
         """Abrir la aplicación en el dispositivo"""
         try:
@@ -1125,138 +1216,349 @@ LOGS:
         except Exception as e:
             return False, f"❌ Error abriendo aplicación: {str(e)}"
 
+    def _obtener_uid_package(self, package_name):
+        """Obtener UID del package de forma robusta"""
+        try:
+            result = self._ejecutar_adb(f"shell dumpsys package {package_name} | grep userId")
+            if result and result.returncode == 0 and result.stdout:
+                for line in result.stdout.split('\n'):
+                    if "userId=" in line:
+                        match = re.search(r'userId=(\d+)', line)
+                        if match:
+                            return match.group(1)
+            return None
+        except Exception as e:
+            self.logger.log_error(f"Error obteniendo UID para {package_name}: {e}")
+            return None
+
+    def _obtener_info_package(self, package_name):
+        """Obtener información general del package de forma robusta"""
+        info = {}
+        try:
+            result = self._ejecutar_adb(f"shell dumpsys package {package_name}")
+            if result and result.returncode == 0 and result.stdout:
+                for line in result.stdout.split('\n'):
+                    if "versionName" in line:
+                        match = re.search(r'versionName=([^\s]+)', line)
+                        if match:
+                            info['version'] = match.group(1)
+                    elif "versionCode" in line:
+                        match = re.search(r'versionCode=(\d+)', line)
+                        if match:
+                            info['version_code'] = match.group(1)
+            
+            uid = self._obtener_uid_package(package_name)
+            if uid:
+                info['uid'] = uid
+            
+        except Exception as e:
+            self.logger.log_error(f"Error obteniendo info package: {e}")
+        
+        return info
+
+    def _obtener_uso_memoria(self, package_name):
+        """Obtener uso de memoria de forma robusta"""
+        memoria = {}
+        try:
+            result = self._ejecutar_adb(f"shell dumpsys meminfo {package_name}")
+            if result and result.returncode == 0 and result.stdout:
+                lines = result.stdout.split('\n')
+                for line in lines:
+                    if 'TOTAL' in line and 'PSS:' in line:
+                        pss_match = re.search(r'PSS:\s+(\d+)', line)
+                        if pss_match:
+                            memoria['pss_kb'] = int(pss_match.group(1))
+                            memoria['pss_mb'] = round(int(pss_match.group(1)) / 1024, 2)
+                    
+                    elif 'Java Heap:' in line:
+                        heap_match = re.search(r'Java Heap:\s+(\d+)', line)
+                        if heap_match:
+                            memoria['java_heap_kb'] = int(heap_match.group(1))
+                            memoria['java_heap_mb'] = round(int(heap_match.group(1)) / 1024, 2)
+                    
+                    elif 'Native Heap:' in line:
+                        native_match = re.search(r'Native Heap:\s+(\d+)', line)
+                        if native_match:
+                            memoria['native_heap_kb'] = int(native_match.group(1))
+                            memoria['native_heap_mb'] = round(int(native_match.group(1)) / 1024, 2)
+            
+            # Si no se encontraron datos, establecer valores por defecto
+            if not memoria:
+                memoria['pss_mb'] = 0.0
+                memoria['java_heap_mb'] = 0.0
+                memoria['native_heap_mb'] = 0.0
+                
+        except Exception as e:
+            self.logger.log_error(f"Error obteniendo memoria: {e}")
+            memoria['pss_mb'] = 'Error'
+            memoria['java_heap_mb'] = 'Error'
+            memoria['native_heap_mb'] = 'Error'
+        
+        return memoria
+
+    def _obtener_uso_cpu_mejorado(self, package_name):
+        """Obtener uso de CPU de forma MÁS ROBUSTA"""
+        cpu_stats = {}
+        try:
+            # Obtener UID del package primero
+            uid = self._obtener_uid_package(package_name)
+            
+            # MÉTODO 1: Usar dumpsys cpuinfo con UID
+            if uid:
+                result = self._ejecutar_adb("shell dumpsys cpuinfo")
+                if result and result.returncode == 0 and result.stdout:
+                    lines = result.stdout.split('\n')
+                    for line in lines:
+                        if f"{uid}:" in line or f"/{package_name}" in line:
+                            match = re.search(r'(\d+\.?\d*)%\s+' + re.escape(f"{uid}:") + r'.*', line)
+                            if not match:
+                                match = re.search(r'(\d+\.?\d*)%\s+' + re.escape(f"/{package_name}"), line)
+                            
+                            if match:
+                                cpu_stats['cpu_usage'] = f"{match.group(1)}%"
+                                cpu_stats['cpu_detalle'] = line.strip()
+                                break
+            
+            # MÉTODO 2: Usar top si el primer método falla
+            if 'cpu_usage' not in cpu_stats:
+                pid = self._obtener_pid_package(package_name)
+                if pid:
+                    result = self._ejecutar_adb(f"shell top -n 1 -b")
+                    if result and result.returncode == 0 and result.stdout:
+                        for line in result.stdout.split('\n'):
+                            if pid in line:
+                                parts = line.split()
+                                if len(parts) >= 9:
+                                    for part in parts:
+                                        if '%' in part and part.replace('%', '').replace('.', '').isdigit():
+                                            cpu_stats['cpu_usage'] = part
+                                            break
+                                    else:
+                                        if parts[8].replace('.', '').isdigit():
+                                            cpu_stats['cpu_usage'] = f"{parts[8]}%"
+            
+            # MÉTODO 3: Método simplificado con ps
+            if 'cpu_usage' not in cpu_stats:
+                pid = self._obtener_pid_package(package_name)
+                if pid:
+                    result = self._ejecutar_adb(f"shell ps -p {pid} -o %cpu")
+                    if result and result.returncode == 0 and result.stdout:
+                        lines = result.stdout.split('\n')
+                        if len(lines) >= 2:
+                            cpu_value = lines[1].strip()
+                            if cpu_value and cpu_value.replace('.', '').isdigit():
+                                cpu_stats['cpu_usage'] = f"{cpu_value}%"
+            
+            # Si aún no tenemos datos
+            if 'cpu_usage' not in cpu_stats:
+                cpu_stats['cpu_usage'] = '0% (App puede no estar ejecutándose)'
+                
+        except Exception as e:
+            self.logger.log_error(f"Error obteniendo CPU mejorado: {e}")
+            cpu_stats['cpu_usage'] = f'Error: {str(e)}'
+        
+        return cpu_stats
+
+    def _obtener_consumo_datos_mejorado(self, package_name):
+        """Obtener consumo de datos de forma MÁS ROBUSTA"""
+        datos_stats = {}
+        try:
+            # Obtener UID del package
+            uid = self._obtener_uid_package(package_name)
+            
+            # MÉTODO 1: Usar dumpsys netstats
+            if uid:
+                result = self._ejecutar_adb("shell dumpsys netstats detail")
+                if result and result.returncode == 0 and result.stdout:
+                    lines = result.stdout.split('\n')
+                    uid_found = False
+                    total_rx = 0
+                    total_tx = 0
+                    
+                    for line in lines:
+                        if f"uid={uid}" in line:
+                            uid_found = True
+                            continue
+                        
+                        if uid_found:
+                            if "rb=" in line and "tb=" in line:
+                                rx_match = re.search(r'rb=(\d+)', line)
+                                tx_match = re.search(r'tb=(\d+)', line)
+                                if rx_match:
+                                    total_rx += int(rx_match.group(1))
+                                if tx_match:
+                                    total_tx += int(tx_match.group(1))
+                            elif line.strip() == "":
+                                break
+                    
+                    if total_rx > 0 or total_tx > 0:
+                        datos_stats['datos_recibidos'] = self._bytes_a_human(total_rx)
+                        datos_stats['datos_enviados'] = self._bytes_a_human(total_tx)
+                        datos_stats['datos_total'] = self._bytes_a_human(total_rx + total_tx)
+            
+            # MÉTODO 2: Usar /proc/net/xt_qtaguid/stats
+            if not datos_stats and uid:
+                result = self._ejecutar_adb(f"shell cat /proc/net/xt_qtaguid/stats 2>/dev/null")
+                if result and result.returncode == 0 and result.stdout:
+                    total_rx = 0
+                    total_tx = 0
+                    for line in result.stdout.split('\n'):
+                        if line.strip() and uid in line:
+                            parts = line.split()
+                            if len(parts) >= 8:
+                                try:
+                                    total_rx += int(parts[5])
+                                    total_tx += int(parts[7])
+                                except (ValueError, IndexError):
+                                    continue
+                    
+                    if total_rx > 0 or total_tx > 0:
+                        datos_stats['datos_recibidos'] = self._bytes_a_human(total_rx)
+                        datos_stats['datos_enviados'] = self._bytes_a_human(total_tx)
+                        datos_stats['datos_total'] = self._bytes_a_human(total_rx + total_tx)
+            
+            # MÉTODO 3: Método simplificado
+            if not datos_stats:
+                result = self._ejecutar_adb(f"shell dumpsys package {package_name}")
+                if result and result.returncode == 0 and result.stdout:
+                    for line in result.stdout.split('\n'):
+                        if 'Data received' in line:
+                            match = re.search(r'Data received:\s*([\d.]+)\s*(\w+)', line)
+                            if match:
+                                datos_stats['datos_recibidos'] = f"{match.group(1)} {match.group(2)}"
+                        elif 'Data sent' in line:
+                            match = re.search(r'Data sent:\s*([\d.]+)\s*(\w+)', line)
+                            if match:
+                                datos_stats['datos_enviados'] = f"{match.group(1)} {match.group(2)}"
+            
+            # Si no se encontraron datos
+            if not datos_stats:
+                datos_stats['datos_info'] = 'No se detectó actividad de red reciente'
+                
+        except Exception as e:
+            self.logger.log_error(f"Error obteniendo datos mejorado: {e}")
+            datos_stats['datos_info'] = f'Error al obtener datos: {str(e)}'
+        
+        return datos_stats
+
+    def _obtener_info_bateria_mejorado(self, package_name):
+        """Obtener información de batería más detallada"""
+        battery_stats = {}
+        try:
+            # Método 1: dumpsys batterystats
+            result = self._ejecutar_adb(f"shell dumpsys batterystats {package_name}")
+            if result and result.returncode == 0 and result.stdout:
+                lines = result.stdout.split('\n')
+                
+                wake_locks = 0
+                
+                for line in lines:
+                    line_lower = line.lower()
+                    
+                    # Wake locks
+                    if 'partial wakelock' in line_lower:
+                        wake_match = re.search(r'(\d+)\s+times', line)
+                        if wake_match:
+                            wake_locks = int(wake_match.group(1))
+                            break
+                
+                battery_stats['wake_locks'] = str(wake_locks) if wake_locks > 0 else 'No detectados'
+            
+            # Método 2: Información general de batería
+            result = self._ejecutar_adb("shell dumpsys battery")
+            if result and result.returncode == 0 and result.stdout:
+                for line in result.stdout.split('\n'):
+                    if 'level' in line.lower():
+                        battery_stats['battery_level'] = line.split(':')[-1].strip()
+                    elif 'health' in line.lower():
+                        battery_stats['battery_health'] = line.split(':')[-1].strip()
+                        
+        except Exception as e:
+            self.logger.log_error(f"Error obteniendo batería mejorado: {e}")
+            battery_stats['wake_locks'] = 'Error al obtener datos'
+        
+        return battery_stats
+
+    def _bytes_a_human(self, bytes_size):
+        """Convertir bytes a formato legible"""
+        try:
+            if bytes_size == 0:
+                return "0 B"
+            
+            for unit in ['B', 'KB', 'MB', 'GB']:
+                if bytes_size < 1024.0:
+                    return f"{bytes_size:.2f} {unit}"
+                bytes_size /= 1024.0
+            return f"{bytes_size:.2f} TB"
+        except:
+            return "N/A"
+
     def _obtener_estadisticas_app(self, package_name):
-        """Obtener estadísticas de memoria y datos de la aplicación"""
+        """Obtener estadísticas COMPLETAS de forma más robusta"""
         try:
             stats = {}
             
-            # Obtener uso de memoria
-            result = self._ejecutar_adb(f"shell dumpsys meminfo {package_name}")
-            if result and result.returncode == 0:
-                memoria_info = self._parsear_memoria(result.stdout)
+            # 1. Obtener información básica del package
+            package_info = self._obtener_info_package(package_name)
+            if package_info:
+                stats.update(package_info)
+            
+            # 2. Obtener uso de memoria
+            memoria_info = self._obtener_uso_memoria(package_name)
+            if memoria_info:
                 stats.update(memoria_info)
             
-            # Obtener uso de datos
-            result = self._ejecutar_adb(f"shell dumpsys package {package_name} | grep -A 20 'Data stats:'")
-            if result and result.returncode == 0:
-                datos_info = self._parsear_datos(result.stdout)
+            # 3. Obtener uso de CPU MEJORADO
+            cpu_info = self._obtener_uso_cpu_mejorado(package_name)
+            if cpu_info:
+                stats.update(cpu_info)
+            
+            # 4. Obtener consumo de datos MEJORADO
+            datos_info = self._obtener_consumo_datos_mejorado(package_name)
+            if datos_info:
                 stats.update(datos_info)
             
-            # Obtener información de CPU
-            pid = self._obtener_pid_package(package_name)
-            if pid:
-                result = self._ejecutar_adb(f"shell top -n 1 -p {pid}")
-                if result and result.returncode == 0:
-                    cpu_info = self._parsear_cpu(result.stdout, package_name)
-                    stats.update(cpu_info)
+            # 5. Obtener información de batería MEJORADO
+            battery_info = self._obtener_info_bateria_mejorado(package_name)
+            if battery_info:
+                stats.update(battery_info)
             
             return True, stats
             
         except Exception as e:
+            self.logger.log_error(f"Error en _obtener_estadisticas_app: {e}")
             return False, f"❌ Error obteniendo estadísticas: {str(e)}"
 
-    def _parsear_memoria(self, output):
-        """Parsear información de memoria del output de dumpsys meminfo"""
-        memoria = {}
-        try:
-            # Buscar líneas con información de memoria
-            lines = output.split('\n')
-            for line in lines:
-                if 'TOTAL' in line and 'PSS:' in line:
-                    # Extraer PSS (Proportional Set Size)
-                    pss_match = re.search(r'PSS:\s+(\d+)', line)
-                    if pss_match:
-                        memoria['pss_kb'] = int(pss_match.group(1))
-                        memoria['pss_mb'] = round(int(pss_match.group(1)) / 1024, 2)
-                
-                elif 'Java Heap:' in line:
-                    heap_match = re.search(r'Java Heap:\s+(\d+)', line)
-                    if heap_match:
-                        memoria['java_heap_kb'] = int(heap_match.group(1))
-                        memoria['java_heap_mb'] = round(int(heap_match.group(1)) / 1024, 2)
-                
-                elif 'Native Heap:' in line:
-                    native_match = re.search(r'Native Heap:\s+(\d+)', line)
-                    if native_match:
-                        memoria['native_heap_kb'] = int(native_match.group(1))
-                        memoria['native_heap_mb'] = round(int(native_match.group(1)) / 1024, 2)
-            
-        except Exception as e:
-            self.logger.log_error(f"Error parseando memoria: {e}")
-        
-        return memoria
-
-    def _parsear_datos(self, output):
-        """Parsear información de uso de datos"""
-        datos = {}
-        try:
-            lines = output.split('\n')
-            for line in lines:
-                if 'Data received:' in line:
-                    received_match = re.search(r'Data received:\s+([\d.]+)\s*(\w+)', line)
-                    if received_match:
-                        datos['datos_recibidos'] = received_match.group(1) + received_match.group(2)
-                
-                elif 'Data sent:' in line:
-                    sent_match = re.search(r'Data sent:\s+([\d.]+)\s*(\w+)', line)
-                    if sent_match:
-                        datos['datos_enviados'] = sent_match.group(1) + sent_match.group(2)
-                
-                elif 'Foreground activities:' in line:
-                    fg_match = re.search(r'Foreground activities:\s+(\d+)', line)
-                    if fg_match:
-                        datos['actividades_foreground'] = int(fg_match.group(1))
-        
-        except Exception as e:
-            self.logger.log_error(f"Error parseando datos: {e}")
-        
-        return datos
-
-    def _parsear_cpu(self, output, package_name):
-        """Parsear información de CPU"""
-        cpu = {}
-        try:
-            lines = output.split('\n')
-            for line in lines:
-                if package_name in line:
-                    # Formato típico de top: PID USER PR NI VIRT RES SHR S %CPU %MEM TIME+ COMMAND
-                    parts = line.split()
-                    if len(parts) >= 9:
-                        cpu['cpu_usage'] = parts[8] + '%'
-                        cpu['memory_usage'] = parts[9] + '%' if len(parts) > 9 else 'N/A'
-                        break
-        except Exception as e:
-            self.logger.log_error(f"Error parseando CPU: {e}")
-        
-        return cpu
-
     def _mostrar_estadisticas_app(self, package_name):
-        """Mostrar estadísticas de la aplicación"""
-        def obtener_estadisticas():
-            progress_dialog = self._mostrar_dialogo_progreso(self.logcat_window, "Obteniendo estadísticas...")
+        """Mostrar estadísticas de la aplicación - CON MANEJO MEJORADO DE ERRORES"""
+        if not package_name:
+            messagebox.showwarning("Advertencia", "Selecciona un package primero")
+            return
             
+        def obtener_estadisticas():
             try:
-                # Primero abrir la aplicación
-                success_open, msg_open = self._abrir_app_en_dispositivo(package_name)
+                progress_dialog = self._mostrar_dialogo_progreso(self.logcat_window, "Obteniendo estadísticas...")
                 
-                # Luego obtener estadísticas
+                # Obtener estadísticas
                 success_stats, result_stats = self._obtener_estadisticas_app(package_name)
                 
                 self.root.after(0, lambda: self._procesar_estadisticas(
-                    progress_dialog, package_name, success_open, msg_open, success_stats, result_stats))
+                    progress_dialog, package_name, success_stats, result_stats))
                     
             except Exception as e:
                 self.root.after(0, lambda: self._procesar_error_estadisticas(progress_dialog, str(e)))
 
         threading.Thread(target=obtener_estadisticas, daemon=True).start()
 
-    def _procesar_estadisticas(self, progress_dialog, package_name, success_open, msg_open, success_stats, result_stats):
-        """Procesar y mostrar estadísticas obtenidas"""
-        progress_dialog.destroy()
+    def _procesar_estadisticas(self, progress_dialog, package_name, success_stats, result_stats):
+        """Procesar y mostrar estadísticas obtenidas - MEJORADO"""
+        if progress_dialog and progress_dialog.winfo_exists():
+            progress_dialog.destroy()
         
+        # Crear diálogo de estadísticas
         dialog = tk.Toplevel(self.logcat_window)
         dialog.title(f"Estadísticas - {package_name}")
-        dialog.geometry("500x600")
+        dialog.geometry("800x900")
         dialog.configure(bg=self.styles.COLORS['primary_bg'])
         dialog.transient(self.logcat_window)
         dialog.grab_set()
@@ -1274,104 +1576,47 @@ LOGS:
             pady=10
         ).pack()
 
-        # Resultado de apertura
-        open_frame = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
-        open_frame.pack(fill="x", pady=10)
-        
-        open_icon = "✅" if success_open else "❌"
-        open_color = "#4caf50" if success_open else "#f44336"
-        
-        tk.Label(
-            open_frame,
-            text=f"{open_icon} Estado: {msg_open}",
-            font=("Segoe UI", 10),
-            bg=self.styles.COLORS['primary_bg'],
-            fg=open_color,
-            justify="left"
-        ).pack(anchor="w")
+        # Frame con scroll para estadísticas
+        stats_container = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
+        stats_container.pack(fill="both", expand=True, pady=10)
+
+        stats_text = scrolledtext.ScrolledText(
+            stats_container,
+            wrap="word",
+            font=("Consolas", 9),
+            bg=self.styles.COLORS['secondary_bg'],
+            fg=self.styles.COLORS['text_primary'],
+            height=35,
+            padx=15,
+            pady=15
+        )
+        stats_text.pack(fill="both", expand=True)
 
         if success_stats and isinstance(result_stats, dict):
-            # Mostrar estadísticas en un frame con scroll
-            stats_frame = tk.Frame(main_frame)
-            stats_frame.pack(fill="both", expand=True, pady=10)
-
-            stats_text = scrolledtext.ScrolledText(
-                stats_frame,
-                wrap="word",
-                font=("Consolas", 9),
-                bg=self.styles.COLORS['secondary_bg'],
-                fg=self.styles.COLORS['text_primary'],
-                height=15,
-                padx=10,
-                pady=10
-            )
-            stats_text.pack(fill="both", expand=True)
-
-            # Formatear estadísticas
-            stats_text.insert("1.0", "📈 ESTADÍSTICAS DETALLADAS\n")
-            stats_text.insert("2.0", "=" * 50 + "\n\n")
-            
-            # Memoria
-            stats_text.insert("end", "🧠 USO DE MEMORIA:\n")
-            stats_text.insert("end", "-" * 30 + "\n")
-            if 'pss_mb' in result_stats:
-                stats_text.insert("end", f"• Memoria total (PSS): {result_stats['pss_mb']} MB\n")
-            if 'java_heap_mb' in result_stats:
-                stats_text.insert("end", f"• Java Heap: {result_stats['java_heap_mb']} MB\n")
-            if 'native_heap_mb' in result_stats:
-                stats_text.insert("end", f"• Native Heap: {result_stats['native_heap_mb']} MB\n")
-            stats_text.insert("end", "\n")
-            
-            # CPU
-            stats_text.insert("end", "⚡ USO DE CPU:\n")
-            stats_text.insert("end", "-" * 30 + "\n")
-            if 'cpu_usage' in result_stats:
-                stats_text.insert("end", f"• Uso de CPU: {result_stats['cpu_usage']}\n")
-            if 'memory_usage' in result_stats:
-                stats_text.insert("end", f"• Uso de Memoria: {result_stats['memory_usage']}\n")
-            stats_text.insert("end", "\n")
-            
-            # Datos
-            stats_text.insert("end", "📡 USO DE DATOS:\n")
-            stats_text.insert("end", "-" * 30 + "\n")
-            if 'datos_recibidos' in result_stats:
-                stats_text.insert("end", f"• Datos recibidos: {result_stats['datos_recibidos']}\n")
-            if 'datos_enviados' in result_stats:
-                stats_text.insert("end", f"• Datos enviados: {result_stats['datos_enviados']}\n")
-            if 'actividades_foreground' in result_stats:
-                stats_text.insert("end", f"• Actividades en foreground: {result_stats['actividades_foreground']}\n")
-            
-            stats_text.config(state='disabled')
+            # Formatear estadísticas MEJORADO
+            self._formatear_estadisticas_en_texto(stats_text, result_stats)
         else:
             # Mostrar error
-            error_frame = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
-            error_frame.pack(fill="both", expand=True, pady=10)
-            
-            tk.Label(
-                error_frame,
-                text="❌ No se pudieron obtener estadísticas detalladas",
-                font=("Segoe UI", 10),
-                bg=self.styles.COLORS['primary_bg'],
-                fg="#f44336",
-                pady=10
-            ).pack()
-            
-            if isinstance(result_stats, str):
-                error_text = scrolledtext.ScrolledText(
-                    error_frame,
-                    wrap="word",
-                    font=("Consolas", 8),
-                    bg=self.styles.COLORS['secondary_bg'],
-                    fg=self.styles.COLORS['text_primary'],
-                    height=5
-                )
-                error_text.pack(fill="x", pady=5)
-                error_text.insert("1.0", result_stats)
-                error_text.config(state='disabled')
+            self._mostrar_error_estadisticas(stats_text, result_stats)
 
-        # Botón cerrar
+        stats_text.config(state='disabled')
+
+        # Botones
         btn_frame = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
         btn_frame.pack(fill="x", pady=10)
+
+        tk.Button(
+            btn_frame,
+            text="🔄 Actualizar",
+            command=lambda: self._actualizar_estadisticas(dialog, package_name, stats_text),
+            font=("Segoe UI", 9),
+            bg="#2196f3",
+            fg="white",
+            relief="flat",
+            padx=20,
+            pady=5,
+            cursor="hand2"
+        ).pack(side="left", padx=(0, 10))
 
         tk.Button(
             btn_frame,
@@ -1388,9 +1633,101 @@ LOGS:
 
         self._centrar_dialogo(dialog, self.logcat_window)
 
+    def _formatear_estadisticas_en_texto(self, stats_text, result_stats):
+        """Formatear las estadísticas en el widget de texto"""
+        stats_text.insert("1.0", "📈 ESTADÍSTICAS DETALLADAS\n")
+        stats_text.insert("2.0", "=" * 55 + "\n\n")
+        
+        # Información general
+        stats_text.insert("end", "📱 INFORMACIÓN GENERAL:\n")
+        stats_text.insert("end", "-" * 35 + "\n")
+        stats_text.insert("end", f"• UID: {result_stats.get('uid', 'No disponible')}\n")
+        if 'version' in result_stats:
+            stats_text.insert("end", f"• Versión: {result_stats['version']}\n")
+        if 'version_code' in result_stats:
+            stats_text.insert("end", f"• Código de versión: {result_stats['version_code']}\n")
+        stats_text.insert("end", "\n")
+        
+        # Memoria
+        stats_text.insert("end", "🧠 USO DE MEMORIA:\n")
+        stats_text.insert("end", "-" * 35 + "\n")
+        stats_text.insert("end", f"• Memoria total (PSS): {result_stats.get('pss_mb', 'N/A')} MB\n")
+        stats_text.insert("end", f"• Java Heap: {result_stats.get('java_heap_mb', 'N/A')} MB\n")
+        stats_text.insert("end", f"• Native Heap: {result_stats.get('native_heap_mb', 'N/A')} MB\n")
+        stats_text.insert("end", "\n")
+        
+        # CPU
+        stats_text.insert("end", "⚡ USO DE CPU:\n")
+        stats_text.insert("end", "-" * 35 + "\n")
+        stats_text.insert("end", f"• Uso de CPU: {result_stats.get('cpu_usage', 'No disponible')}\n")
+        stats_text.insert("end", "\n")
+        
+        # Datos de red
+        stats_text.insert("end", "📡 CONSUMO DE DATOS:\n")
+        stats_text.insert("end", "-" * 35 + "\n")
+        
+        if 'datos_recibidos' in result_stats:
+            stats_text.insert("end", f"• 📥 Datos recibidos: {result_stats['datos_recibidos']}\n")
+        if 'datos_enviados' in result_stats:
+            stats_text.insert("end", f"• 📤 Datos enviados: {result_stats['datos_enviados']}\n")
+        if 'datos_total' in result_stats:
+            stats_text.insert("end", f"• 📊 Total transferido: {result_stats['datos_total']}\n")
+        
+        if not any(key in result_stats for key in ['datos_recibidos', 'datos_enviados', 'datos_total']):
+            stats_text.insert("end", f"• {result_stats.get('datos_info', 'No se detectó actividad de red')}\n")
+        
+        stats_text.insert("end", "\n")
+        
+        # Batería
+        stats_text.insert("end", "🔋 CONSUMO DE BATERÍA:\n")
+        stats_text.insert("end", "-" * 35 + "\n")
+        stats_text.insert("end", f"• Wake locks: {result_stats.get('wake_locks', 'No disponible')}\n")
+        stats_text.insert("end", "\n")
+        
+        # Información adicional
+        stats_text.insert("end", "💡 INFORMACIÓN ADICIONAL:\n")
+        stats_text.insert("end", "-" * 35 + "\n")
+        stats_text.insert("end", "• Los datos se obtienen del sistema Android en tiempo real\n")
+        stats_text.insert("end", "• Para datos más precisos, ejecuta la aplicación\n")
+
+    def _mostrar_error_estadisticas(self, stats_text, result_stats):
+        """Mostrar mensaje de error en las estadísticas"""
+        stats_text.insert("1.0", "❌ ERROR AL OBTENER ESTADÍSTICAS\n")
+        stats_text.insert("end", "=" * 45 + "\n\n")
+        
+        if isinstance(result_stats, str):
+            stats_text.insert("end", f"Error: {result_stats}\n\n")
+        
+        stats_text.insert("end", "🔧 POSIBLES SOLUCIONES:\n")
+        stats_text.insert("end", "-" * 25 + "\n")
+        stats_text.insert("end", "• Verifica que el dispositivo esté conectado\n")
+        stats_text.insert("end", "• Asegúrate de que la aplicación esté instalada\n")
+        stats_text.insert("end", "• Intenta reiniciar el servidor ADB\n")
+
+    def _actualizar_estadisticas(self, dialog, package_name, stats_text):
+        """Actualizar las estadísticas en tiempo real"""
+        def actualizar():
+            success_stats, result_stats = self._obtener_estadisticas_app(package_name)
+            self.root.after(0, lambda: self._refrescar_estadisticas(dialog, stats_text, success_stats, result_stats))
+        
+        threading.Thread(target=actualizar, daemon=True).start()
+
+    def _refrescar_estadisticas(self, dialog, stats_text, success_stats, result_stats):
+        """Refrescar el contenido de las estadísticas"""
+        stats_text.config(state='normal')
+        stats_text.delete(1.0, tk.END)
+        
+        if success_stats and isinstance(result_stats, dict):
+            self._formatear_estadisticas_en_texto(stats_text, result_stats)
+        else:
+            self._mostrar_error_estadisticas(stats_text, result_stats)
+        
+        stats_text.config(state='disabled')
+
     def _procesar_error_estadisticas(self, progress_dialog, error):
         """Procesar error al obtener estadísticas"""
-        progress_dialog.destroy()
+        if progress_dialog and progress_dialog.winfo_exists():
+            progress_dialog.destroy()
         messagebox.showerror("Error", f"No se pudieron obtener las estadísticas:\n{error}")
 
     def _mostrar_dialogo_progreso(self, parent, mensaje):

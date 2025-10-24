@@ -204,26 +204,26 @@ class BotonRedondeado(tk.Canvas):
                 'border': '#4CAF50',  # Verde
                 'text': '#2E7D32'     # Verde oscuro
             },
-            'logcat': { 
-                'normal': "#FFFFFF",   # Blanco
-                'hover': "#FFFDE7",    # Amarillo muy claro
-                'active': "#EAE194",   # Amarillo claro
-                'border': "#FFD600",   # Amarillo vibrante
-                'text': "#212121"      # Negro
+            'logcat': {
+                'normal': '#fffde7',   # Amarillo muy claro
+                'hover': '#fff9c4',    # Amarillo claro
+                'active': '#fff59d',   # Amarillo medio
+                'border': '#fbc02d',   # Amarillo fuerte
+                'text': '#795548'      # Marrón grisáceo
             },
             'APK': {
-                'normal': '#FFFFFF',   # Blanco
-                'hover': "#CEDEF5",    # Azul muy claro
-                'active': '#E3F2FD',   # Azul claro
-                'border': "#2196F3",   # Azul Android
-                'text': '#000000'      # Negro
+                'normal': '#e3f2fd',   # Azul claro
+                'hover': '#bbdefb',    # Azul medio
+                'active': '#90caf9',   # Azul fuerte
+                'border': '#1976d2',   # Azul Android
+                'text': '#0d47a1'      # Azul oscuro
             },
             'warning': {
-                'normal': '#FFFFFF',   # Blanco
-                'hover': '#FFF8E1',    # Amarillo muy claro
-                'active': '#FFECB3',   # Amarillo claro
-                'border': '#FFA000',   # Amarillo anaranjado
-                'text': '#E65100'      # Naranja oscuro
+                'normal': '#fff8e1',   # Amarillo claro
+                'hover': '#ffecb3',    # Amarillo medio
+                'active': '#ffe082',   # Amarillo más intenso
+                'border': '#ffb300',   # Amarillo anaranjado
+                'text': '#e65100'      # Naranja oscuro
             }
         }
         return styles.get(style_name, styles['primary'])

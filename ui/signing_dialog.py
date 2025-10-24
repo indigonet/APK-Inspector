@@ -329,8 +329,9 @@ class SigningDialog:
                     'output_folder': str(output_folder)
                 }
                 
-                # Mostrar diálogo de éxito
-                self._mostrar_exito(output_folder, apk_signed_path, signature_path)
+                # ✅ ELIMINADO: No mostrar diálogo de éxito
+                # Simplemente cerrar el diálogo de firma
+                self.dialog.destroy()
                 
             except Exception as e:
                 self._manejar_error_firma(str(e))
@@ -339,7 +340,8 @@ class SigningDialog:
                 
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo preparar la firma: {str(e)}")
-    
+                    
+
     def _cancelar(self):
         """Cancelar firma"""
         self.resultado = None

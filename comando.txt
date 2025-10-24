@@ -7,4 +7,4 @@ Start-Process -FilePath "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0
 
 signtool sign /a /fd SHA256 APK_Inspector.exe
 
-pyinstaller --onefile --windowed --name "APK_Inspector 1.0.3" --add-data "assets;assets" --icon=assets/logoAPP.ico --clean --hidden-import=PIL --hidden-import=PIL._tkinter_finder --hidden-import=tkinter --hidden-import=tkinter.ttk launcher.py
+pyinstaller --onefile --windowed --name "APK_Inspector 1.0.5" --add-data "assets;assets" --icon=assets/logoAPP.ico --clean --hidden-import=PIL --hidden-import=PIL._tkinter_finder --hidden-import=tkinter --hidden-import=tkinter.ttk launcher.py

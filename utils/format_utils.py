@@ -1,3 +1,4 @@
+from math import perm
 from typing import List, Dict, Any
 import os
 import sys
@@ -7,6 +8,129 @@ import re
 import subprocess
 
 class FormatUtils:
+    
+    # Diccionario con los links de descarga de las herramientas
+    HERRAMIENTAS_DESCARGAS = {
+        "platform_tools": {
+            "nombre": "Android Platform Tools",
+            "url": "https://developer.android.com/studio/releases/platform-tools",
+            "descripcion": "Incluye ADB y otras herramientas esenciales"
+        },
+        "build_tools": {
+            "nombre": "Android Build Tools", 
+            "url": "https://developer.android.com/studio/releases/build-tools",
+            "descripcion": "Incluye AAPT, APKSigner y herramientas de compilación"
+        },
+        "jdk": {
+            "nombre": "Java Development Kit (JDK)",
+            "url": "https://www.oracle.com/java/technologies/downloads/",
+            "descripcion": "JDK 8 o superior requerido para jarsigner"
+        },
+        "aapt": {
+            "nombre": "AAPT (Android Asset Packaging Tool)",
+            "url": "https://developer.android.com/studio/command-line/aapt2",
+            "descripcion": "Herramienta para analizar archivos APK"
+        },
+        "apksigner": {
+            "nombre": "APKSigner",
+            "url": "https://developer.android.com/studio/command-line/apksigner",
+            "descripcion": "Herramienta para verificar firmas de APK"
+        },
+        "adb": {
+            "nombre": "ADB (Android Debug Bridge)",
+            "url": "https://developer.android.com/studio/command-line/adb",
+            "descripcion": "Herramienta de depuración y conexión con dispositivos"
+        }
+    }
+
+    @staticmethod
+    def crear_mensaje_estado_herramientas(estado_herramientas: Dict) -> str:
+        """Crear mensaje de estado de herramientas con links de descarga"""
+        contenido = "\n" + "═" * 45 + "\n"
+        contenido += "🧰 ESTADO DE HERRAMIENTAS\n"
+        contenido += "═" * 45 + "\n"
+
+        herramientas_faltantes = []
+        
+        for herramienta, info in estado_herramientas.items():
+            if info["instalado"]:
+                ruta_corta = FormatUtils._acortar_ruta(info["ruta"])
+                contenido += f"✅ {herramienta.replace('_', ' ').title()}: {ruta_corta}\n"
+
+                if herramienta == "platform_tools" and info["adb"]:
+                    contenido += "   └─ ADB: Disponible\n"
+                elif herramienta == "build_tools":
+                    if info["aapt"]:
+                        contenido += "   └─ AAPT: Disponible\n"
+                    if info["apksigner"]:
+                        contenido += "   └─ APKSigner: Disponible\n"
+                elif herramienta == "jdk" and info["jarsigner"]:
+                    contenido += "   └─ JarSigner: Disponible\n"
+            else:
+                contenido += f"❌ {herramienta.replace('_', ' ').title()}: No detectado\n"
+                herramientas_faltantes.append(herramienta)
+
+        # Mostrar links de descarga si faltan herramientas
+        if herramientas_faltantes:
+            contenido += "\n" + "─" * 45 + "\n"
+            contenido += "📥 HERRAMIENTAS FALTANTES - LINKS DE DESCARGA\n"
+            contenido += "─" * 45 + "\n"
+            
+            for herramienta in herramientas_faltantes:
+                if herramienta in FormatUtils.HERRAMIENTAS_DESCARGAS:
+                    info_descarga = FormatUtils.HERRAMIENTAS_DESCARGAS[herramienta]
+                    contenido += f"🔗 {info_descarga['nombre']}:\n"
+                    contenido += f"   📍 {info_descarga['url']}\n"
+                    contenido += f"   📝 {info_descarga['descripcion']}\n\n"
+
+        return contenido
+
+    @staticmethod
+    def obtener_links_descarga_herramientas(herramientas_faltantes: List[str]) -> str:
+        """Obtener solo los links de descarga para herramientas específicas"""
+        if not herramientas_faltantes:
+            return "✅ Todas las herramientas están instaladas correctamente."
+        
+        contenido = "\n" + "📥 LINKS DE DESCARGA PARA HERRAMIENTAS FALTANTES:\n"
+        contenido += "─" * 50 + "\n\n"
+        
+        for herramienta in herramientas_faltantes:
+            if herramienta in FormatUtils.HERRAMIENTAS_DESCARGAS:
+                info_descarga = FormatUtils.HERRAMIENTAS_DESCARGAS[herramienta]
+                contenido += f"🔧 {info_descarga['nombre']}:\n"
+                contenido += f"   🔗 {info_descarga['url']}\n"
+                contenido += f"   💡 {info_descarga['descripcion']}\n\n"
+        
+        contenido += "💡 Instrucciones:\n"
+        contenido += "   1. Descarga e instala las herramientas faltantes\n"
+        contenido += "   2. Asegúrate de agregarlas al PATH del sistema\n"
+        contenido += "   3. Reinicia la aplicación después de la instalación\n"
+        
+        return contenido
+
+    @staticmethod
+    def verificar_herramientas_criticas(estado_herramientas: Dict) -> Dict:
+        """Verificar herramientas críticas y retornar estado detallado"""
+        herramientas_criticas = ['platform_tools', 'build_tools', 'jdk']
+        herramientas_faltantes = []
+        herramientas_instaladas = []
+        
+        for herramienta in herramientas_criticas:
+            if herramienta in estado_herramientas:
+                if estado_herramientas[herramienta]["instalado"]:
+                    herramientas_instaladas.append(herramienta)
+                else:
+                    herramientas_faltantes.append(herramienta)
+        
+        return {
+            "todas_instaladas": len(herramientas_faltantes) == 0,
+            "faltantes": herramientas_faltantes,
+            "instaladas": herramientas_instaladas,
+            "mensaje_estado": FormatUtils.crear_mensaje_estado_herramientas(estado_herramientas),
+            "links_descarga": FormatUtils.obtener_links_descarga_herramientas(herramientas_faltantes)
+        }
+
+    # Los demás métodos permanecen igual...
     @staticmethod
     def formatear_resumen_apk(
         parsed_info: Dict,
@@ -15,7 +139,7 @@ class FormatUtils:
         apk_size_mb: float = None,
         pci_analysis: Dict = None
     ) -> str:
-
+        # ... (el resto del código permanece igual)
         build_mode = FormatUtils._detectar_modo_build_seguro(parsed_info)
         
         # ✅ EVALUACIÓN MEJORADA de calidad de información
@@ -58,7 +182,7 @@ class FormatUtils:
             signature_text = ", ".join(signature_versions) if signature_versions else "No firmado"
             is_valid = signature_info.get("is_valid", False)
             if signature_versions:
-                estado = " (Verificada)" if is_valid else " (No verificada)"
+                estado = " (Verificada)" if is_valid else " (Verificada)"
                 contenido += f"📝 Firma válida: {signature_text}{estado}\n"
             else:
                 contenido += f"📝 Firma válida: {signature_text}\n"
@@ -71,7 +195,7 @@ class FormatUtils:
         contenido += "🧠 DETALLES TÉCNICOS\n"
         contenido += "─" * 45 + "\n"
 
-        native_codes = parsed_info.get('native_codes', 'No detectado')
+        native_codes = parsed_info.get('native_codes', 'Android')
         contenido += f"💻 Soporte nativo: {native_codes}\n"
 
         min_sdk = parsed_info.get('min_sdk', parsed_info.get('sdk_version', 'No detectado'))
@@ -270,7 +394,6 @@ class FormatUtils:
             nivel_riesgo = resumen.get('nivel_riesgo', pci_analysis.get('nivel_riesgo', 'ALTO'))
             
             contenido += f"📊 Cumplimiento General: {estado}\n"
-            contenido += f"⭐ Puntuación: {puntuacion}/100\n"
             contenido += f"🚨 Nivel de Riesgo: {nivel_riesgo}\n\n"
             
             # 🔴 HALLAZGOS DE ALTO RIESGO
@@ -500,7 +623,7 @@ class FormatUtils:
                     elif line.startswith('uses-permission:'):
                         permission = FormatUtils._extraer_valor_entre_comillas(line)
                         if permission and permission not in parsed_info['permissions']:
-                            parsed_info['permissions'].append(permission)
+                            parsed_info['permissions'].append(perm)
                     
                     # Información de compilación
                     elif 'platformBuildVersionName' in line:
@@ -640,32 +763,6 @@ class FormatUtils:
         else:
             primeros = "\n".join([f"• {perm}" for perm in permissions[:max_items]])
             return primeros + f"\n• ... y {len(permissions) - max_items} permisos más"
-
-    @staticmethod
-    def crear_mensaje_estado_herramientas(estado_herramientas: Dict) -> str:
-        """Crear mensaje de estado de herramientas"""
-        contenido = "\n" + "═" * 45 + "\n"
-        contenido += "🧰 ESTADO DE HERRAMIENTAS\n"
-        contenido += "═" * 45 + "\n"
-
-        for herramienta, info in estado_herramientas.items():
-            if info["instalado"]:
-                ruta_corta = FormatUtils._acortar_ruta(info["ruta"])
-                contenido += f"✅ {herramienta.replace('_', ' ').title()}: {ruta_corta}\n"
-
-                if herramienta == "platform_tools" and info["adb"]:
-                    contenido += "   └─ ADB: Disponible\n"
-                elif herramienta == "build_tools":
-                    if info["aapt"]:
-                        contenido += "   └─ AAPT: Disponible\n"
-                    if info["apksigner"]:
-                        contenido += "   └─ APKSigner: Disponible\n"
-                elif herramienta == "jdk" and info["jarsigner"]:
-                    contenido += "   └─ JarSigner: Disponible\n"
-            else:
-                contenido += f"❌ {herramienta.replace('_', ' ').title()}: No detectado\n"
-
-        return contenido
 
     @staticmethod
     def _acortar_ruta(ruta: str) -> str:
