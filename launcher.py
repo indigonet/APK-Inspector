@@ -10,7 +10,7 @@ current_dir = Path(__file__).parent
 sys.path.insert(0, str(current_dir))  
 sys.path.insert(0, str(current_dir / "app"))  
 
-try:
+try:    
     from app.main import main
     if __name__ == "__main__":
         main()

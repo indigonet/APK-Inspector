@@ -1,3 +1,0 @@
-"""
-APK Inspector Application Package
-"""

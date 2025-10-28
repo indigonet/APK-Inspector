@@ -167,67 +167,120 @@ class BotonRedondeado(tk.Canvas):
         self.dibujar_boton()
     
     def _get_button_style(self, style_name: str) -> Dict[str, str]:
-        """Obtener configuración de estilo para el botón"""
+        """Obtener configuración de estilo para el botón - MEJORADO CONTRASTE"""
         styles = {
             'primary': {
-                'normal': '#FFFFFF',  # Blanco puro
-                'hover': '#F5F5F5',   # Blanco ligeramente gris
-                'active': '#EEEEEE',  # Gris muy claro
-                'border': '#000000',  # Negro
-                'text': '#000000'     # Negro
+                'normal': '#FFFFFF',      # Blanco puro
+                'hover': '#F0F0F0',       # Gris muy claro (más contraste)
+                'active': '#E0E0E0',      # Gris claro (más contraste)
+                'border': '#2C2C2C',      # Negro suavizado
+                'text': '#1A1A1A',        # Negro intenso
+                'border_width': 2,        # Borde más grueso
+                'shadow': '#00000020'     # Sombra sutil
             },
             'secondary': {
-                'normal': '#F8F9FA',  # Blanco casi puro
-                'hover': '#E9ECEF',   # Gris muy claro
-                'active': '#DEE2E6',  # Gris claro
-                'border': '#495057',  # Gris oscuro
-                'text': '#000000'     # Negro
+                'normal': '#F8F9FA',      # Blanco casi puro
+                'hover': '#E8EAED',       # Gris más contrastado
+                'active': '#D8DCE0',      # Gris medio
+                'border': '#5A6268',      # Gris oscuro mejorado
+                'text': '#2D3748',        # Negro grisáceo
+                'border_width': 2,
+                'shadow': '#00000015'
             },
             'danger': {
-                'normal': '#FFFFFF',  # Blanco
-                'hover': '#FFEBEE',   # Rojo muy claro
-                'active': '#FFCDD2',  # Rosa claro
-                'border': '#D32F2F',  # Rojo
-                'text': '#D32F2F'     # Rojo
+                'normal': '#FFFFFF',      # Blanco
+                'hover': '#FFE6E6',       # Rojo muy claro (más contraste)
+                'active': '#FFCCCC',      # Rosa claro (más contraste)
+                'border': '#C53030',      # Rojo oscuro
+                'text': '#C53030',        # Rojo intenso
+                'border_width': 2,
+                'shadow': '#FF000010'
             },
             'success': {
-                'normal': '#FFFFFF',  # Blanco
-                'hover': '#E8F5E8',   # Verde muy claro
-                'active': '#C8E6C9',  # Verde claro
-                'border': '#2E7D32',  # Verde oscuro
-                'text': '#2E7D32'     # Verde oscuro
+                'normal': '#FFFFFF',      # Blanco
+                'hover': '#E6F4E6',       # Verde muy claro (más contraste)
+                'active': '#CCE8CC',      # Verde claro (más contraste)
+                'border': '#2D7730',      # Verde más oscuro
+                'text': '#2D7730',        # Verde más oscuro
+                'border_width': 2,
+                'shadow': '#00FF0010'
             },
             'sign': { 
-                'normal': '#FFFFFF',  # Blanco
-                'hover': '#F1F8E9',   # Verde muy claro
-                'active': '#DCEDC8',  # Verde claro
-                'border': '#4CAF50',  # Verde
-                'text': '#2E7D32'     # Verde oscuro
+                'normal': '#FFFFFF',      # Blanco
+                'hover': '#ECF7EC',       # Verde muy claro (más contraste)
+                'active': '#D8EFD8',      # Verde claro (más contraste)
+                'border': '#3D8B40',      # Verde más oscuro
+                'text': '#2E7D32',        # Verde oscuro
+                'border_width': 2,
+                'shadow': '#4CAF5020'
             },
             'logcat': {
-                'normal': '#fffde7',   # Amarillo muy claro
-                'hover': '#fff9c4',    # Amarillo claro
-                'active': '#fff59d',   # Amarillo medio
-                'border': '#fbc02d',   # Amarillo fuerte
-                'text': '#795548'      # Marrón grisáceo
+                'normal': '#FFFDE7',      # Amarillo muy claro
+                'hover': '#FFF8C4',       # Amarillo claro (más contraste)
+                'active': '#FFF3A3',      # Amarillo medio (más contraste)
+                'border': '#F59E0B',      # Amarillo anaranjado fuerte
+                'text': '#7C2D12',        # Marrón oscuro (mejor contraste)
+                'border_width': 2,
+                'shadow': '#F59E0B20'
             },
             'APK': {
-                'normal': '#e3f2fd',   # Azul claro
-                'hover': '#bbdefb',    # Azul medio
-                'active': '#90caf9',   # Azul fuerte
-                'border': '#1976d2',   # Azul Android
-                'text': '#0d47a1'      # Azul oscuro
+                'normal': '#F0F7FB',      # Azul claro
+                'hover': '#DBEDF7',       # Azul medio (más contraste)
+                'active': '#C6E3F3',      # Azul más fuerte
+                'border': '#1E6FC4',      # Azul Android más oscuro
+                'text': '#1E40AF',        # Azul oscuro (mejor contraste)
+                'border_width': 2,
+                'shadow': '#1E6FC420'
             },
             'warning': {
-                'normal': '#fff8e1',   # Amarillo claro
-                'hover': '#ffecb3',    # Amarillo medio
-                'active': '#ffe082',   # Amarillo más intenso
-                'border': '#ffb300',   # Amarillo anaranjado
-                'text': '#e65100'      # Naranja oscuro
+                'normal': '#FFFBEB',      # Amarillo claro (más vibrante)
+                'hover': '#FEF3C7',       # Amarillo medio (más contraste)
+                'active': '#FDE68A',      # Amarillo más intenso
+                'border': '#F59E0B',      # Amarillo anaranjado
+                'text': '#92400E',        # Naranja muy oscuro (mejor contraste)
+                'border_width': 2,
+                'shadow': '#F59E0B25'
+            },
+            'rec': {
+                'normal': '#FFF5F5',      # Rojo muy claro (mejor para REC)
+                'hover': '#FED7D7',       # Rojo claro
+                'active': '#FEB2B2',      # Rojo medio
+                'border': '#E53E3E',      # Rojo vibrante
+                'text': '#C53030',        # Rojo oscuro
+                'border_width': 3,        # Borde más grueso para REC
+                'shadow': '#E53E3E30',    # Sombra roja
+                'pulse': True             # Efecto de pulso
+            },
+            'screen': {
+                'normal': '#F0F9FF',      # Azul muy claro
+                'hover': '#E0F2FE',       # Azul claro
+                'active': '#BAE6FD',      # Azul medio
+                'border': '#0EA5E9',      # Azul sky
+                'text': '#0369A1',        # Azul oscuro
+                'border_width': 2,
+                'shadow': '#0EA5E920'
+            },
+            'mirror': {
+                'normal': '#FDF4FF',      # Violeta muy claro
+                'hover': '#FAE8FF',       # Violeta claro
+                'active': '#F3CCFF',      # Violeta medio
+                'border': '#C026D3',      # Violeta vibrante
+                'text': '#86198F',        # Violeta oscuro
+                'border_width': 2,
+                'shadow': '#C026D320'
+            },
+            'rec': {
+                'normal': '#F5F3FF',      # Violeta muy claro
+                'hover': '#EDE9FE',       # Violeta claro
+                'active': '#DDD6FE',      # Violeta medio
+                'border': '#7C3AED',      # Violeta intenso
+                'text': '#5B21B6',        # Violeta oscuro
+                'border_width': 2,
+                'shadow': '#7C3AED20'
             }
         }
         return styles.get(style_name, styles['primary'])
-    
+        
     def habilitar(self):
         """Habilitar el botón"""
         self.enabled = True

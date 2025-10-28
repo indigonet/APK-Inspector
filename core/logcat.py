@@ -8,11 +8,9 @@ import re
 from pathlib import Path
 import datetime
 
-# Importar el CustomCombobox
 try:
     from components.custom_combobox import CustomCombobox
 except ImportError:
-    # Fallback si no encuentra el componente
     CustomCombobox = None
 
 class LogcatManager:
@@ -35,7 +33,6 @@ class LogcatManager:
         self.current_screen = 0
         self.monitoring_stats = False
         self.stats_process = None
-        # ✅ ELIMINADO: No preguntar estadísticas automáticamente
 
     def _get_adb_path(self):
         """Obtener la ruta de ADB desde la configuración"""
@@ -194,7 +191,7 @@ class LogcatManager:
         
         # Configuración de ventana mejorada
         self.logcat_window.geometry("1400x850")
-        self.logcat_window.minsize(1200, 700)
+        self.logcat_window.minsize(800, 400)
         
         # Detectar pantalla actual
         self._detectar_pantalla_actual()
@@ -204,8 +201,7 @@ class LogcatManager:
         self.logcat_window.bind("<Control-s>", lambda e: self._guardar_log())
         self.logcat_window.bind("<Control-l>", lambda e: self._limpiar_logcat())
         self.logcat_window.bind("<Control-f>", lambda e: self.package_combobox.focus() if hasattr(self, 'package_combobox') else None)
-        
-        # ✅ NUEVO: Binding para cerrar dropdown al hacer clic fuera
+
         self.logcat_window.bind("<Button-1>", self._cerrar_dropdown_al_clic_exterior)
         
         self._crear_ui_logcat_mejorada()
@@ -316,7 +312,7 @@ class LogcatManager:
         # Título principal
         title_label = tk.Label(
             header_frame,
-            text="🐱 LOGCAT",
+            text="🐈 LOGCAT",
             font=("Segoe UI", 16, "bold"),
             bg=self.styles.COLORS['primary_bg'],
             fg=self.styles.COLORS['accent'],
@@ -361,7 +357,6 @@ class LogcatManager:
         combo_frame = tk.Frame(package_selector_frame, bg=self.styles.COLORS['secondary_bg'])
         combo_frame.pack(side="left", fill="x", expand=True)
 
-        # ✅ USAR CUSTOM COMBOBOX
         if CustomCombobox:
             self.package_combobox = CustomCombobox(
                 parent=combo_frame,

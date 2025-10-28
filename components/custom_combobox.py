@@ -13,7 +13,8 @@ class CustomCombobox:
         self.filtered_items = all_items.copy()
         self.dropdown_visible = False
         self.current_value = tk.StringVar()
-        self.last_hover_index = -1  # Para trackear el último índice con hover
+        self.last_hover_index = -1
+        self.ignore_focus_out = False  # Nueva variable para controlar el foco
         
         self._create_widgets()
         self._setup_bindings()
@@ -105,6 +106,7 @@ class CustomCombobox:
         
         # Bindings del Listbox
         self.listbox.bind('<<ListboxSelect>>', self._on_listbox_select)
+        self.listbox.bind('<Button-1>', self._on_listbox_click)  # ✅ NUEVO: Click simple
         self.listbox.bind('<Double-Button-1>', self._on_double_click)
         self.listbox.bind('<Return>', self._on_listbox_enter)
         self.listbox.bind('<Escape>', lambda e: self._hide_dropdown_and_focus_entry())
@@ -112,6 +114,7 @@ class CustomCombobox:
         self.listbox.bind('<Up>', self._on_listbox_arrow_key)
         self.listbox.bind('<Down>', self._on_listbox_arrow_key)
         self.listbox.bind('<Tab>', self._on_listbox_tab)
+        self.listbox.bind('<FocusOut>', self._on_listbox_focus_out)  # ✅ NUEVO: Foco fuera del listbox
         
         # ✅ NUEVO: Bindings para efecto hover
         self.listbox.bind('<Motion>', self._on_mouse_motion)
@@ -119,27 +122,94 @@ class CustomCombobox:
         
         # Bindings del botón dropdown
         self.dropdown_btn.bind('<Tab>', self._on_dropdown_btn_tab)
+        
+        # ✅ NUEVO: Binding global para detectar clicks fuera del combobox
+        self.parent.winfo_toplevel().bind('<Button-1>', self._on_global_click)
     
+    def _on_global_click(self, event):
+        """Detectar clicks fuera del combobox"""
+        # Verificar si el click fue fuera del combobox
+        if not self.dropdown_visible:
+            return
+            
+        # Obtener coordenadas del widget
+        entry_x1 = self.entry.winfo_rootx()
+        entry_y1 = self.entry.winfo_rooty()
+        entry_x2 = entry_x1 + self.entry.winfo_width()
+        entry_y2 = entry_y1 + self.entry.winfo_height()
+        
+        dropdown_x1 = self.dropdown_frame.winfo_rootx()
+        dropdown_y1 = self.dropdown_frame.winfo_rooty()
+        dropdown_x2 = dropdown_x1 + self.dropdown_frame.winfo_width()
+        dropdown_y2 = dropdown_y1 + self.dropdown_frame.winfo_height()
+        
+        # Verificar si el click fue fuera del área del combobox
+        click_in_entry = (entry_x1 <= event.x_root <= entry_x2 and 
+                         entry_y1 <= event.y_root <= entry_y2)
+        click_in_dropdown = (dropdown_x1 <= event.x_root <= dropdown_x2 and 
+                            dropdown_y1 <= event.y_root <= dropdown_y2)
+        click_in_dropdown_btn = (self.dropdown_btn.winfo_rootx() <= event.x_root <= self.dropdown_btn.winfo_rootx() + self.dropdown_btn.winfo_width() and
+                                self.dropdown_btn.winfo_rooty() <= event.y_root <= self.dropdown_btn.winfo_rooty() + self.dropdown_btn.winfo_height())
+        
+        if not (click_in_entry or click_in_dropdown or click_in_dropdown_btn):
+            # Click fuera del combobox, ocultar dropdown pero mantener selección
+            self._hide_dropdown_and_focus_entry()
+    
+    def _on_listbox_click(self, event):
+        """✅ NUEVO: Manejar click simple en el listbox"""
+        # Obtener el índice clickeado
+        index = self.listbox.nearest(event.y)
+        if 0 <= index < self.listbox.size():
+            # Seleccionar el item
+            self.listbox.selection_clear(0, tk.END)
+            self.listbox.selection_set(index)
+            self.listbox.activate(index)
+            
+            # Actualizar el entry con la selección
+            selected_item = self.listbox.get(index)
+            self.current_value.set(selected_item)
+            
+            # ✅ NO ocultar el dropdown - mantenerlo visible para posible doble click
+            # Solo actualizar y mantener la selección
+    
+    def _on_double_click(self, event):
+        """✅ MEJORADO: Doble click para seleccionar y cerrar"""
+        # Obtener el índice clickeado
+        index = self.listbox.nearest(event.y)
+        if 0 <= index < self.listbox.size():
+            # Seleccionar el item
+            self.listbox.selection_clear(0, tk.END)
+            self.listbox.selection_set(index)
+            self.listbox.activate(index)
+            
+            # Actualizar el entry con la selección
+            selected_item = self.listbox.get(index)
+            self.current_value.set(selected_item)
+            
+            # Ocultar dropdown y ejecutar callback
+            self._hide_dropdown_and_focus_entry()
+            self._trigger_callback()
+    
+    def _on_listbox_focus_out(self, event):
+        """✅ NUEVO: Cuando el listbox pierde el foco"""
+        # No hacer nada inmediatamente, dejar que _on_global_click maneje esto
+        pass
+
     def _on_ctrl_space(self, event):
         """Filtrar y mostrar dropdown con Ctrl+Space"""
         self._filter_items()
         self._show_dropdown()
-        return "break"  # Prevenir el comportamiento por defecto
+        return "break"
     
     def _on_mouse_motion(self, event):
         """Efecto hover cuando el mouse se mueve sobre el listbox"""
         if not self.dropdown_visible:
             return
             
-        # Obtener el índice bajo el cursor del mouse
         index = self.listbox.nearest(event.y)
         
-        # Solo aplicar hover si el índice es válido y diferente al último
         if 0 <= index < self.listbox.size() and index != self.last_hover_index:
-            # Remover hover anterior
             self._remove_hover_effect()
-            
-            # Aplicar hover al nuevo índice
             self._apply_hover_effect(index)
             self.last_hover_index = index
     
@@ -150,18 +220,12 @@ class CustomCombobox:
     
     def _apply_hover_effect(self, index):
         """Aplicar efecto hover a un índice específico"""
-        # Solo aplicar hover si no está seleccionado
         if index not in self.listbox.curselection():
-            # Guardar el color original del item
-            original_bg = self.listbox.cget('bg')
-            
-            # Aplicar color de hover (azul claro)
             self.listbox.itemconfig(index, {'bg': '#e6f3ff', 'fg': 'black'})
     
     def _remove_hover_effect(self):
         """Remover efecto hover de todos los items"""
         if self.last_hover_index != -1 and self.last_hover_index < self.listbox.size():
-            # Solo remover hover si no está seleccionado
             if self.last_hover_index not in self.listbox.curselection():
                 self.listbox.itemconfig(self.last_hover_index, {
                     'bg': self.listbox.cget('bg'), 
@@ -171,7 +235,6 @@ class CustomCombobox:
     def _remove_all_hover_effects(self):
         """Remover todos los efectos hover del listbox"""
         for i in range(self.listbox.size()):
-            # Solo remover hover si no está seleccionado
             if i not in self.listbox.curselection():
                 self.listbox.itemconfig(i, {
                     'bg': self.listbox.cget('bg'), 
@@ -186,7 +249,6 @@ class CustomCombobox:
         
         self._filter_items()
         
-        # Mostrar dropdown si hay texto y no está visible
         if self.current_value.get() and not self.dropdown_visible:
             self._show_dropdown()
     
@@ -195,13 +257,11 @@ class CustomCombobox:
         if event.keysym in ['Return', 'Escape', 'Up', 'Down', 'Tab']:
             return
         
-        # Obtener texto actual del listbox (solo si hay selección explícita)
         try:
             selection = self.listbox.curselection()
             if selection:
                 current_text = self.listbox.get(selection[0])
-                # Solo actualizar si el usuario seleccionó explícitamente
-                if event.keysym not in ['Up', 'Down']:  # No actualizar con flechas
+                if event.keysym not in ['Up', 'Down']:
                     self.current_value.set(current_text)
                     self._filter_items()
         except:
@@ -227,7 +287,6 @@ class CustomCombobox:
         for item in self.filtered_items:
             self.listbox.insert(tk.END, item)
         
-        # ✅ Remover efectos hover al actualizar la lista
         self.last_hover_index = -1
     
     def _show_dropdown(self):
@@ -235,10 +294,8 @@ class CustomCombobox:
         if self.dropdown_visible or not self.filtered_items:
             return
         
-        # Obtener la ventana toplevel
         toplevel = self.parent.winfo_toplevel()
         
-        # Posicionar dropdown debajo del Entry
         x = self.entry.winfo_rootx() - toplevel.winfo_rootx()
         y = self.entry.winfo_rooty() - toplevel.winfo_rooty() + self.entry.winfo_height()
         width = self.entry.winfo_width()
@@ -247,11 +304,9 @@ class CustomCombobox:
         self.dropdown_frame.lift()
         self.dropdown_visible = True
         
-        # ✅ MEJORA: Solo enfocar el listbox si no hay selección previa
-        # Limpiar cualquier selección previa
+        # Limpiar selección previa
         self.listbox.selection_clear(0, tk.END)
         
-        # Mover el scroll al inicio si hay resultados
         if self.filtered_items:
             self.listbox.see(0)
     
@@ -260,7 +315,6 @@ class CustomCombobox:
         self._show_dropdown()
         if self.dropdown_visible:
             self.listbox.focus_set()
-            # Si hay elementos, seleccionar el primero
             if self.filtered_items:
                 self.listbox.selection_set(0)
                 self.listbox.activate(0)
@@ -270,15 +324,18 @@ class CustomCombobox:
         if self.dropdown_visible:
             self.dropdown_frame.place_forget()
             self.dropdown_visible = False
-            # ✅ Remover efectos hover al ocultar
             self._remove_all_hover_effects()
     
     def _hide_dropdown_and_focus_entry(self):
-        """Ocultar dropdown y enfocar el entry"""
+        """✅ MEJORADO: Ocultar dropdown pero mantener selección"""
+        current_selection = self.get()
         self._hide_dropdown()
         self.entry.focus_set()
-        # ✅ MEJORA: Quitar el cursor de escritura (|) después de seleccionar
-        self.entry.icursor(tk.END)  # Mover cursor al final pero sin selección
+        self.entry.icursor(tk.END)
+        
+        # ✅ Mantener la selección actual en el entry
+        if current_selection:
+            self.current_value.set(current_selection)
     
     def _toggle_dropdown(self):
         """Alternar visibilidad del dropdown"""
@@ -295,10 +352,7 @@ class CustomCombobox:
                 selected_item = self.listbox.get(selection[0])
                 self.current_value.set(selected_item)
                 
-                # ✅ MEJORA: Quitar el cursor de escritura (|) inmediatamente después de seleccionar
                 self.parent.after(10, self._remove_cursor)
-                
-                # ✅ Remover efectos hover al seleccionar
                 self._remove_all_hover_effects()
                 
         except:
@@ -306,16 +360,8 @@ class CustomCombobox:
     
     def _remove_cursor(self):
         """Quitar el cursor de escritura del entry"""
-        # Perder y recuperar el foco rápidamente para eliminar el cursor parpadeante
         self.entry.selection_clear()
-        # Mover el cursor al final pero sin que parpadee
         self.entry.icursor(tk.END)
-    
-    def _on_double_click(self, event):
-        """Doble click para seleccionar"""
-        self._on_listbox_select(event)
-        self._hide_dropdown_and_focus_entry()
-        self._trigger_callback()
     
     def _on_listbox_enter(self, event):
         """Enter en el Listbox"""
@@ -325,7 +371,6 @@ class CustomCombobox:
     
     def _on_listbox_arrow_key(self, event):
         """Manejar teclas de flecha en el Listbox"""
-        # ✅ Remover hover anterior antes de mover la selección
         self._remove_all_hover_effects()
         
         if event.keysym == 'Up':
@@ -346,23 +391,18 @@ class CustomCombobox:
     
     def _on_enter(self, event):
         """Enter en el Entry"""
-        # Solo aplicar filtro si hay texto, no seleccionar automáticamente
         current_text = self.current_value.get()
         if current_text:
-            # Buscar coincidencia exacta o primera coincidencia
             matching_items = [item for item in self.all_items if current_text.lower() in item.lower()]
             if matching_items:
-                # Si hay una coincidencia exacta, seleccionarla
                 exact_match = [item for item in matching_items if item.lower() == current_text.lower()]
                 if exact_match:
                     self.current_value.set(exact_match[0])
                 else:
-                    # Si no hay exacta, usar la primera coincidencia
                     self.current_value.set(matching_items[0])
                 self._trigger_callback()
         
         self._hide_dropdown()
-        # ✅ MEJORA: Quitar cursor después de Enter
         self.parent.after(10, self._remove_cursor)
     
     def _on_entry_focus_in(self, event):
@@ -375,31 +415,26 @@ class CustomCombobox:
             if self.dropdown_visible:
                 focused_widget = self.parent.winfo_toplevel().focus_get()
                 if focused_widget != self.listbox and focused_widget != self.dropdown_btn:
-                    self._hide_dropdown()
+                    self._hide_dropdown_and_focus_entry()
         
         self.parent.after(150, hide)
     
     def _on_entry_tab(self, event):
         """Manejar Tab en el Entry"""
         if self.dropdown_visible:
-            # Si el dropdown está visible, mover foco al listbox
             self.listbox.focus_set()
             if self.filtered_items:
                 self.listbox.selection_set(0)
                 self.listbox.activate(0)
-            return "break"  # Prevenir comportamiento por defecto de Tab
+            return "break"
     
     def _on_listbox_tab(self, event):
         """Manejar Tab en el Listbox"""
-        self._hide_dropdown()
-        # ✅ MEJORA: Quitar cursor al salir con Tab
+        self._hide_dropdown_and_focus_entry()
         self.parent.after(10, self._remove_cursor)
-        # Permitir que el foco se mueva al siguiente widget
-        # No retornamos "break" para permitir la navegación normal
     
     def _on_dropdown_btn_tab(self, event):
         """Manejar Tab en el botón dropdown"""
-        # Permitir navegación normal con Tab
         pass
     
     def _trigger_callback(self):
@@ -415,7 +450,6 @@ class CustomCombobox:
     def set(self, value):
         """Establecer valor"""
         self.current_value.set(value)
-        # ✅ MEJORA: Quitar cursor al establecer valor programáticamente
         self.parent.after(10, self._remove_cursor)
     
     def set_items(self, new_items):
@@ -442,5 +476,10 @@ class CustomCombobox:
     
     def destroy(self):
         """Destruir todos los widgets"""
+        # ✅ NUEVO: Remover binding global
+        try:
+            self.parent.winfo_toplevel().unbind('<Button-1>')
+        except:
+            pass
         self.main_frame.destroy()
         self.dropdown_frame.destroy()

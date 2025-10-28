@@ -22,12 +22,26 @@ except ImportError as e:
     except ImportError:
         print("No se pudieron cargar los módulos necesarios")
         sys.exit(1)
+        # En las importaciones al inicio
+try:
+    from app.tool_manager import ToolManager
+    from app.scrcpy_manager import ScrcpyManager
+except ImportError as e:
+    print(f"⚠️ No se pudieron cargar los managers de herramientas: {e}")
+    # Crear stubs para evitar errores
+    class ToolManager:
+        def check_all_tools(self): return {}
+    class ScrcpyManager:
+        def __init__(self, *args): pass
+        def ensure_available(self): return False
 
 
 class APKInspectorApp:
     def __init__(self, root, loading_screen=None):
         self.root = root
         self.loading_screen = loading_screen
+        self.tool_manager = ToolManager()
+        self.scrcpy_manager = ScrcpyManager(self.tool_manager)
         self.initializer = AppInitializer(root, loading_screen)
         self.initializer.initialize_with_loading()
         self._wait_for_initialization()
@@ -42,7 +56,6 @@ class APKInspectorApp:
         try:
             self.components = self.initializer.get_all_components()
             
-            # ✅ VERIFICAR QUE EL ANALYZER ESTÉ CORRECTO
             if 'apk_analyzer' not in self.components or self.components['apk_analyzer'] is None:
                 print("❌ APK Analyzer no encontrado en componentes, creando uno...")
                 from core.apk_analyzer import APKAnalyzer
@@ -51,7 +64,6 @@ class APKInspectorApp:
                     self.components['logger']
                 )
             
-            # ✅ VERIFICAR MÉTODOS DISPONIBLES
             analyzer = self.components['apk_analyzer']
             print(f"🔍 APK Analyzer tipo: {type(analyzer)}")
             print(f"🔍 Tiene analizar_apk_completo: {hasattr(analyzer, 'analizar_apk_completo')}")
@@ -290,7 +302,7 @@ class APKInspectorApp:
             "📊 Comandos",
             self.mostrar_log_completo,
             tooltip_text="Ver Comandos detallados del análisis",
-            width=120,
+            width=130,
             height=40,
             style='primary'
         )
@@ -308,10 +320,21 @@ class APKInspectorApp:
         self.btn_gestionar.pack(side="left", padx=3)
         self.botones_apk.append(self.btn_gestionar)
 
+        self.btn_scrcpy = BotonRedondeado(
+            right_btn_frame,
+            "🔴 REC",
+            self.mostrar_scrcpy,
+            tooltip_text="Ver pantalla de terminal",
+            width=100,
+            height=40,
+            style='rec'
+        )
+        self.btn_scrcpy.pack(side="left", padx=3)
+
         # NUEVO: Botón Logcat
         self.btn_logcat = BotonRedondeado(
             right_btn_frame,
-            "🐱 Logcat",
+            "🐈 Logcat",
             self.mostrar_logcat,
             tooltip_text="Monitor de logs de dispositivos Android",
             width=100,
@@ -323,7 +346,7 @@ class APKInspectorApp:
         # Botones de la derecha - SOLO LIMPIAR Y GESTIONAR FIRMA
         self.btn_limpiar = BotonRedondeado(
             right_btn_frame,
-            "🔄 Limpiar",
+            "🫧 Limpiar",
             self.limpiar_todo,
             width=100,
             height=40,
@@ -413,6 +436,26 @@ class APKInspectorApp:
                 "Error", 
                 f"No se pudo abrir el monitor Logcat:\n{str(e)}"
             )
+
+    def mostrar_scrcpy(self):
+        """Mostrar ventana de control de Scrcpy"""
+        try:
+            from ui.scrcpy_dialog import ScrcpyDialog
+            
+            scrcpy_dialog = ScrcpyDialog(
+                self.root,
+                self.scrcpy_manager,
+                self.styles,
+                self.logger
+            )
+            scrcpy_dialog.mostrar()
+            
+        except Exception as e:
+            self.logger.log_error("Error abriendo Scrcpy", e)
+            messagebox.showerror(
+                "Error", 
+                f"No se pudo abrir el control de Scrcpy:\n{str(e)}"
+            )            
 
     def crear_area_resumen(self):
         main_frame = tk.Frame(self.root, bg=self.styles.COLORS['primary_bg'])
@@ -698,44 +741,41 @@ class APKInspectorApp:
         signing_dialog = SigningDialog(self.root, self.apk_path, build_tools)
         resultado = signing_dialog.mostrar()
 
-        if resultado:
+        if resultado and resultado.get('success'):
             progress_dialog = self._mostrar_dialogo_progreso("Firmando APK...")
             self.root.update()
 
             try:
-                # ✅ VERIFICAR QUE EL MÉTODO EXISTA
                 if not hasattr(self.apk_analyzer, 'firmar_apk'):
                     messagebox.showerror("Error", "El analizador no soporta firma de APKs")
                     progress_dialog.destroy()
                     return
-
-                # ✅ CORREGIR: Pasar solo los argumentos que espera firmar_apk
+                
                 exito, output = self.apk_analyzer.firmar_apk(
                     Path(resultado['apk_path']),
                     Path(resultado['jks_path']),
                     resultado['password'],
                     build_tools,
-                    resultado.get('alias')  # Este es opcional (6to argumento)
+                    resultado.get('alias')  # Este es opcional
                 )
 
                 progress_dialog.destroy()
 
-                # ⚠️ AQUÍ ESTÁ EL PROBLEMA - ESTOS DIÁLOGOS SE MUESTRAN SIEMPRE
                 if exito:
-                    messagebox.showinfo("Éxito",  # ⬅️ ESTE DIÁLOGO SE MUESTRA
+                    messagebox.showinfo("Éxito",
                         f"✅ APK firmada correctamente!\n\n"
                         f"{output}"
                     )
                     self.logger.log_info(f"APK firmada: {output}")
                 else:
-                    messagebox.showerror("Error",  # ⬅️ Y ESTE TAMBIÉN
+                    messagebox.showerror("Error",
                         f"❌ Error al firmar APK:\n\n{output}"
                     )
                     self.logger.log_error(f"Error firmando APK: {output}")
 
             except Exception as e:
                 progress_dialog.destroy()
-                messagebox.showerror("Error",  # ⬅️ Y ESTE EN CASO DE EXCEPCIÓN
+                messagebox.showerror("Error",
                     f"❌ Error durante la firma:\n\n{str(e)}"
                 )
                 self.logger.log_error(f"Excepción firmando APK: {e}")

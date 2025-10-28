@@ -4,11 +4,19 @@ from pathlib import Path
 from typing import Optional
 import shutil
 import os
+import subprocess
+import sys
+import tempfile
 from datetime import datetime
-from .components import BotonRedondeado, AppStyles
+
+# Asegúrate de importar correctamente tus componentes
+try:
+    from .components import BotonRedondeado, AppStyles
+except ImportError:
+    # Para cuando se ejecute como .exe
+    from components import BotonRedondeado, AppStyles
 
 class SigningDialog:
-    """Diálogo para firmar APK"""
     
     def __init__(self, parent, apk_path: Path, build_tools_path: str):
         self.parent = parent
@@ -16,10 +24,12 @@ class SigningDialog:
         self.build_tools_path = build_tools_path
         self.styles = AppStyles()
         self.resultado = None
-        self.password_visible = True  # Por defecto visible
+        self.password_visible = True
+        
+    def _log(self, message: str):
+        print(f"[SigningDialog] {message}")
         
     def mostrar(self) -> Optional[dict]:
-        """Mostrar diálogo de firma"""
         self.dialog = tk.Toplevel(self.parent)
         self.dialog.title("Firmar APK")
         self.dialog.geometry("600x500")
@@ -35,7 +45,6 @@ class SigningDialog:
         return self.resultado
     
     def _crear_interfaz(self):
-        """Crear interfaz del diálogo de firma"""
         main_frame = tk.Frame(self.dialog, bg=self.styles.COLORS['primary_bg'], padx=25, pady=25)
         main_frame.pack(fill="both", expand=True)
         
@@ -103,8 +112,8 @@ class SigningDialog:
         )
         self.password_entry.pack(fill="x", pady=(5, 0))
         
-        # Checkbox para mostrar/ocultar contraseña (debajo del input)
-        self.show_password_var = tk.BooleanVar(value=True)  # Por defecto visible
+        # Checkbox para mostrar/ocultar contraseña
+        self.show_password_var = tk.BooleanVar(value=True)
         self.show_password_check = tk.Checkbutton(
             password_frame,
             text="Ocultar contraseña",
@@ -155,16 +164,16 @@ class SigningDialog:
             style='secondary'
         ).pack(side="right", padx=(10, 0))
         
-        BotonRedondeado(
+        self.firmar_btn = BotonRedondeado(
             btn_frame,
             "Firmar APK",
             self._firmar,
             width=120,
             style='success'
-        ).pack(side="right")
+        )
+        self.firmar_btn.pack(side="right")
     
     def _seleccionar_jks(self):
-        """Seleccionar archivo JKS"""
         jks_path = filedialog.askopenfilename(
             title="Seleccionar archivo de firma",
             filetypes=[("Java KeyStore", "*.jks"), ("Todos los archivos", "*.*")]
@@ -177,112 +186,228 @@ class SigningDialog:
             self.jks_entry.config(state='readonly')
     
     def _toggle_password_visibility(self):
-        """Alternar visibilidad de la contraseña"""
         if self.show_password_var.get():
-            # Checkbox marcado = ocultar contraseña
             self.password_entry.config(show="•")
             self.show_password_check.config(text="Mostrar contraseña")
         else:
-            # Checkbox desmarcado = mostrar contraseña
             self.password_entry.config(show="")
             self.show_password_check.config(text="Ocultar contraseña")
     
+    def _encontrar_apksigner(self) -> Optional[Path]:
+        build_tools_dir = Path(self.build_tools_path)
+        
+        # Verificar que build-tools existe
+        if not build_tools_dir.exists():
+            self._log(f"Build-tools no existe: {build_tools_dir}")
+            return None
+        
+        # Buscar apksigner en diferentes nombres
+        posibles_nombres = ["apksigner.bat", "apksigner"]
+        
+        for nombre in posibles_nombres:
+            apksigner_path = build_tools_dir / nombre
+            if apksigner_path.exists():
+                self._log(f"apksigner encontrado: {apksigner_path}")
+                return apksigner_path
+        
+        # Si no se encuentra, buscar en subdirectorios
+        for item in build_tools_dir.iterdir():
+            if item.is_dir():
+                for nombre in posibles_nombres:
+                    apksigner_path = item / nombre
+                    if apksigner_path.exists():
+                        self._log(f"apksigner encontrado en subdirectorio: {apksigner_path}")
+                        return apksigner_path
+        
+        self._log("apksigner no encontrado en build-tools")
+        return None
+    
     def _crear_carpeta_escritorio(self, apk_name: str) -> Path:
-        """Crear carpeta en el escritorio para los archivos firmados"""
-        desktop = Path.home() / "Desktop"
-        # Simplificar el nombre de la APK
-        apk_simple_name = apk_name.replace('.apk', '').replace('-unsigned', '')
-        if len(apk_simple_name) > 20:
-            apk_simple_name = apk_simple_name[:20] + "..."
+        posibles_escritorios = []
         
-        folder_name = f"{apk_simple_name}-firmada"
-        output_folder = desktop / folder_name
+        # Intentar diferentes ubicaciones de escritorio
+        try:
+            # Método 1: Escritorio del usuario
+            desktop1 = Path.home() / "Desktop"
+            if desktop1.exists():
+                posibles_escritorios.append(desktop1)
+                self._log(f"Escritorio encontrado: {desktop1}")
+        except Exception as e:
+            self._log(f"Error accediendo escritorio usuario: {e}")
         
-        # Crear la carpeta si no existe
-        output_folder.mkdir(exist_ok=True)
+        try:
+            # Método 2: Variable de entorno USERPROFILE (Windows)
+            user_profile = os.environ.get('USERPROFILE')
+            if user_profile:
+                desktop2 = Path(user_profile) / "Desktop"
+                if desktop2.exists():
+                    posibles_escritorios.append(desktop2)
+                    self._log(f"Escritorio USERPROFILE: {desktop2}")
+        except Exception as e:
+            self._log(f"Error accediendo USERPROFILE: {e}")
         
-        return output_folder
+        try:
+            # Método 3: Directorio de documentos
+            documents = Path.home() / "Documents"
+            if documents.exists():
+                posibles_escritorios.append(documents)
+                self._log(f"Documentos encontrado: {documents}")
+        except Exception as e:
+            self._log(f"Error accediendo documentos: {e}")
+        
+        # Método 4: Directorio actual de la aplicación
+        app_dir = Path.cwd()
+        posibles_escritorios.append(app_dir)
+        self._log(f"Directorio actual: {app_dir}")
+        
+        # Método 5: Directorio temporal
+        temp_dir = Path(tempfile.gettempdir())
+        posibles_escritorios.append(temp_dir)
+        self._log(f"Directorio temporal: {temp_dir}")
+        
+      # Usar la primera ubicación disponible
+        for ubicacion in posibles_escritorios:
+            try:
+                # Crear nombre seguro para la carpeta
+                apk_simple_name = apk_name.replace('.apk', '').replace('-unsigned', '')
+                apk_simple_name = "".join(c for c in apk_simple_name if c.isalnum() or c in ('-', '_'))
+                
+                if len(apk_simple_name) > 15:
+                    apk_simple_name = apk_simple_name[:15]
+                
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+                folder_name = f"{apk_simple_name}_firmada_{timestamp}"
+                
+                # ✅ SOLUCIÓN: Eliminar "APK_Firmadas" /
+                output_folder = ubicacion / folder_name
+                
+                output_folder.mkdir(parents=True, exist_ok=True)
+                
+                self._log(f"Carpeta creada en: {output_folder}")
+                return output_folder
+                
+            except Exception as e:
+                self._log(f"Error creando carpeta en {ubicacion}: {e}")
+                continue
+
+        # ✅ SOLUCIÓN: También eliminar "APK_Firmadas" / del fallback
+        fallback = Path.cwd() / f"firmada_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback
     
-    def _copiar_apk_a_carpeta_final(self, output_folder: Path) -> Path:
-        """Copiar la APK original a la carpeta final (esto sería reemplazado por la APK firmada real)"""
-        apk_simple_name = self.apk_path.stem.replace('-unsigned', '')
-        apk_final_path = output_folder / f"{apk_simple_name}-firmada.apk"
-        
-        # En la implementación real, aquí se generaría la APK firmada
-        # Por ahora solo copiamos la original como ejemplo
-        shutil.copy2(self.apk_path, apk_final_path)
-        return apk_final_path
-    
-    def _crear_archivo_firma(self, output_folder: Path) -> Path:
-        """Crear archivo de firma (esto sería generado por el proceso real de firma)"""
-        apk_simple_name = self.apk_path.stem.replace('-unsigned', '')
-        signature_path = output_folder / f"{apk_simple_name}-firmada.apk.idsig"
-        
-        # En la implementación real, aquí se generaría el archivo de firma
-        # Por ahora creamos un archivo vacío como ejemplo
-        signature_path.touch()
-        return signature_path
-    
-    def _mostrar_exito(self, output_folder: Path, apk_signed_path: Path, signature_path: Path):
-        """Mostrar mensaje de éxito con botón Aceptar"""
-        success_dialog = tk.Toplevel(self.dialog)
-        success_dialog.title("Firma Exitosa")
-        success_dialog.geometry("500x300")
-        success_dialog.resizable(False, False)
-        success_dialog.configure(bg=self.styles.COLORS['primary_bg'])
-        success_dialog.transient(self.dialog)
-        success_dialog.grab_set()
-        
-        # Centrar diálogo de éxito
-        success_dialog.update_idletasks()
-        x = self.dialog.winfo_x() + (self.dialog.winfo_width() - success_dialog.winfo_width()) // 2
-        y = self.dialog.winfo_y() + (self.dialog.winfo_height() - success_dialog.winfo_height()) // 2
-        success_dialog.geometry(f"+{x}+{y}")
-        
-        # Contenido del diálogo de éxito
-        main_frame = tk.Frame(success_dialog, bg=self.styles.COLORS['primary_bg'], padx=20, pady=20)
-        main_frame.pack(fill="both", expand=True)
-        
-        success_text = (
-            "✅ APK firmada exitosamente\n\n"
-            f"📁 Ubicación: Escritorio/{output_folder.name}/\n"
-            f"📦 APK firmada: {apk_signed_path.name}\n"
-            f"🔐 Archivo de firma: {signature_path.name}\n\n"
-            "Sube ambos archivos cuando sea requerido."
-        )
-        
-        success_label = tk.Label(
-            main_frame,
-            text=success_text,
-            font=self.styles.FONTS['normal'],
-            bg=self.styles.COLORS['primary_bg'],
-            fg=self.styles.COLORS['text_primary'],
-            justify="left"
-        )
-        success_label.pack(anchor="w", pady=(0, 20))
-        
-        BotonRedondeado(
-            main_frame,
-            "Aceptar",
-            lambda: [success_dialog.destroy(), self.dialog.destroy()],
-            width=100,
-            style='success'
-        ).pack(side="right")
-    
-    def _manejar_error_firma(self, error_msg: str):
-        """Manejar errores de firma mostrando mensajes específicos"""
-        if "keystore password was incorrect" in error_msg or "failed to decrypt" in error_msg:
-            messagebox.showerror(
-                "Error al firmar APK", 
-                "La contraseña del keystore es incorrecta.\n\n"
-                "Por favor, verifica la contraseña e intenta nuevamente."
+    def _ejecutar_firma_real(self, jks_path: Path, password: str, output_folder: Path) -> tuple[bool, str, Path, Path]:
+        try:
+            # Encontrar apksigner
+            apksigner = self._encontrar_apksigner()
+            if not apksigner:
+                return False, "No se encontró apksigner en build-tools", None, None
+            
+            # Verificar que el JKS existe
+            if not jks_path.exists():
+                return False, f"JKS no encontrado en: {jks_path}", None, None
+            
+            # Verificar que el APK existe
+            if not self.apk_path.exists():
+                return False, f"APK no encontrado: {self.apk_path}", None, None
+            
+            # Crear nombres de archivos de salida
+            apk_simple_name = self.apk_path.stem.replace('-unsigned', '')
+            apk_signed_name = f"{apk_simple_name}-firmada.apk"
+            apk_signed_path = output_folder / apk_signed_name
+            
+            # Construir comando de firma
+            comando = [
+                str(apksigner),
+                "sign",
+                "--ks", str(jks_path),
+                "--ks-pass", f"pass:{password}",
+                "--out", str(apk_signed_path),
+                str(self.apk_path)
+            ]
+            
+            self._log(f"Ejecutando comando: {' '.join(comando)}")
+            
+            # Ejecutar comando
+            resultado = subprocess.run(
+                comando,
+                capture_output=True,
+                text=True,
+                timeout=120  # 2 minutos timeout
             )
-        else:
-            # Para otros errores, mostrar el mensaje completo
-            messagebox.showerror("Error al firmar APK", f"Error: {error_msg}")
+            
+            self._log(f"Resultado comando: returncode={resultado.returncode}")
+            
+            if resultado.returncode != 0:
+                error_msg = resultado.stderr if resultado.stderr else resultado.stdout
+                self._log(f"Error en firma: {error_msg}")
+                return False, f"Error en firma: {error_msg}", None, None
+            
+            # Verificar que el archivo firmado se creó
+            if not apk_signed_path.exists():
+                self._log(f"Archivo firmado no creado: {apk_signed_path}")
+                return False, "No se creó el archivo firmado", None, None
+            
+            self._log(f"APK firmado creado: {apk_signed_path}")
+            
+            # Crear archivo de firma (idsig) - simulado
+            signature_path = output_folder / f"{apk_signed_name}.idsig"
+            try:
+                with open(signature_path, 'w', encoding='utf-8') as f:
+                    f.write(f"Firma generada el: {datetime.now()}\n")
+                    f.write(f"APK: {apk_signed_name}\n")
+                    f.write(f"JKS: {jks_path.name}\n")
+                    f.write(f"Tamaño: {apk_signed_path.stat().st_size} bytes\n")
+                self._log(f"Archivo de firma creado: {signature_path}")
+            except Exception as e:
+                self._log(f"Error creando archivo de firma: {e}")
+                # No es crítico, continuar
+            
+            return True, "Firma exitosa", apk_signed_path, signature_path
+            
+        except subprocess.TimeoutExpired:
+            self._log("Tiempo de espera agotado al firmar")
+            return False, "Tiempo de espera agotado al firmar", None, None
+        except Exception as e:
+            self._log(f"Error inesperado en firma: {e}")
+            return False, f"Error inesperado: {str(e)}", None, None
+    
+    def _deshabilitar_controles(self):
+        try:
+       
+            self.btn_temp_frame = tk.Frame(self.dialog, bg=self.styles.COLORS['primary_bg'])
+            self.btn_temp_frame.pack(side="right", padx=(10, 0))
+            
+            
+            # Deshabilitar otros controles
+            self.jks_entry.config(state='disabled')
+            self.password_entry.config(state='disabled')
+            self.show_password_check.config(state='disabled')
+            
+            self.dialog.update()
+            self._log("Controles deshabilitados")
+        except Exception as e:
+            self._log(f"Error deshabilitando controles: {e}")
+    
+    def _rehabilitar_controles(self):
+        try:
+            # Eliminar botón temporal
+            if hasattr(self, 'btn_temp_frame'):
+                self.btn_temp_frame.destroy()
+            
+            # Mostrar botón original
+            self.firmar_btn.pack(side="right")
+            
+            # Rehabilitar otros controles
+            self.jks_entry.config(state='normal')
+            self.password_entry.config(state='normal')
+            self.show_password_check.config(state='normal')
+            
+            self.dialog.update()
+            self._log("Controles rehabilitados")
+        except Exception as e:
+            self._log(f"Error rehabilitando controles: {e}")
     
     def _firmar(self):
-        """Procesar la firma del APK"""
         jks_path = self.jks_entry.get().strip()
         password = self.password_entry.get().strip()
         
@@ -300,25 +425,60 @@ class SigningDialog:
             messagebox.showerror("Error", "El archivo JKS no existe")
             return
         
-        # Crear carpeta en el escritorio
-        output_folder = self._crear_carpeta_escritorio(self.apk_path.name)
-        
-        # Copiar JKS a build-tools si es necesario
-        build_tools_dir = Path(self.build_tools_path)
-        jks_in_build_tools = build_tools_dir / jks_file.name
+        if not self.apk_path.exists():
+            messagebox.showerror("Error", "El APK original no existe")
+            return
         
         try:
-            # Si el JKS no está en build-tools, copiarlo
-            if not jks_in_build_tools.exists() or jks_in_build_tools != jks_file:
-                shutil.copy2(jks_file, jks_in_build_tools)
+            # Deshabilitar controles
+            self._deshabilitar_controles()
             
-            # Aquí va tu proceso real de firma
+            # Crear carpeta de salida
             try:
-                # Simular proceso de firma - ESTO SERÍA REEMPLAZADO POR TU LÓGICA REAL
-                apk_signed_path = self._copiar_apk_a_carpeta_final(output_folder)
-                signature_path = self._crear_archivo_firma(output_folder)
+                output_folder = self._crear_carpeta_escritorio(self.apk_path.name)
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo crear la carpeta de salida: {str(e)}")
+                self._rehabilitar_controles()
+                return
+            
+            # Verificar que la carpeta se creó correctamente
+            if not output_folder.exists():
+                messagebox.showerror("Error", f"No se pudo crear la carpeta: {output_folder}")
+                self._rehabilitar_controles()
+                return
+            
+            # Copiar JKS a build-tools
+            build_tools_dir = Path(self.build_tools_path)
+            jks_in_build_tools = build_tools_dir / jks_file.name
+            
+            # Verificar que build-tools existe
+            if not build_tools_dir.exists():
+                messagebox.showerror("Error", f"Build-tools no encontrado: {build_tools_dir}")
+                self._rehabilitar_controles()
+                return
+            
+            try:
+                if not jks_in_build_tools.exists() or jks_in_build_tools != jks_file:
+                    shutil.copy2(jks_file, jks_in_build_tools)
+                    self._log(f"JKS copiado a: {jks_in_build_tools}")
+            except Exception as e:
+                messagebox.showerror("Error", f"No se pudo copiar el JKS: {str(e)}")
+                self._rehabilitar_controles()
+                return
+            
+            # EJECUTAR FIRMA REAL
+            success, message, apk_signed_path, signature_path = self._ejecutar_firma_real(
+                jks_in_build_tools, password, output_folder
+            )
+            
+            if success:
+                # Verificar que los archivos se crearon
+                if not apk_signed_path.exists():
+                    messagebox.showerror("Error", f"El APK firmado no se creó: {apk_signed_path}")
+                    self._rehabilitar_controles()
+                    return
                 
-                # Configurar el resultado con las rutas finales
+                # ✅ Solo retornar resultado si fue exitoso
                 self.resultado = {
                     'jks_path': str(jks_in_build_tools),
                     'jks_original_path': str(jks_file),
@@ -326,29 +486,56 @@ class SigningDialog:
                     'apk_path': str(self.apk_path),
                     'apk_signed_path': str(apk_signed_path),
                     'signature_path': str(signature_path),
-                    'output_folder': str(output_folder)
+                    'output_folder': str(output_folder),
+                    'success': True
                 }
-                
-                # ✅ ELIMINADO: No mostrar diálogo de éxito
-                # Simplemente cerrar el diálogo de firma
+                self._log("Firma completada exitosamente")
                 self.dialog.destroy()
-                
-            except Exception as e:
-                self._manejar_error_firma(str(e))
-                # No destruir el diálogo para permitir corregir los datos
-                return
+            else:
+                # ❌ En caso de error, mostrar mensaje pero NO retornar resultado
+                self._manejar_error_firma(message)
+                self._rehabilitar_controles()
                 
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo preparar la firma: {str(e)}")
-                    
-
+            # Rehabilitar controles en caso de error
+            self._rehabilitar_controles()
+            error_msg = f"No se pudo preparar la firma: {str(e)}"
+            self._log(error_msg)
+            messagebox.showerror("Error", error_msg)
+    
+    def _manejar_error_firma(self, error_msg: str):
+        error_lower = error_msg.lower()
+        
+        if any(word in error_lower for word in ['password', 'contraseña', 'incorrect', 'wrong']):
+            messagebox.showerror(
+                "Error al firmar APK", 
+                "La contraseña del keystore es incorrecta.\n\n"
+                "Por favor, verifica la contraseña e intenta nuevamente."
+            )
+        elif 'keystore' in error_lower and 'not found' in error_lower:
+            messagebox.showerror(
+                "Error al firmar APK",
+                "El archivo keystore no se encontró o es inválido."
+            )
+        elif 'apksigner' in error_lower and 'not found' in error_lower:
+            messagebox.showerror(
+                "Error al firmar APK",
+                "No se encontró apksigner. Verifica la ruta de build-tools."
+            )
+        elif 'timeout' in error_lower or 'tiempo' in error_lower:
+            messagebox.showerror(
+                "Error al firmar APK",
+                "Tiempo de espera agotado. El proceso de firma tardó demasiado."
+            )
+        else:
+            # Para otros errores, mostrar el mensaje completo
+            messagebox.showerror("Error al firmar APK", f"Error: {error_msg}")
+    
     def _cancelar(self):
-        """Cancelar firma"""
         self.resultado = None
         self.dialog.destroy()
     
     def _centrar_dialogo(self):
-        """Centrar diálogo en la pantalla"""
         self.dialog.update_idletasks()
         x = self.parent.winfo_x() + (self.parent.winfo_width() - self.dialog.winfo_width()) // 2
         y = self.parent.winfo_y() + (self.parent.winfo_height() - self.dialog.winfo_height()) // 2

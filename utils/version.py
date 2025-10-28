@@ -2,9 +2,9 @@
 Módulo de control de versiones para APK Inspector
 """
 
-__version__ = "1.0.5"
-__version_code__ = "24102025"
-__release_date__ = "24/10/2025"
+__version__ = "1.2.0"
+__version_code__ = "28102025"
+__release_date__ = "28/10/2025"
 __author__ = "Matias Peñaloza"
 __app_name__ = "APK Inspector"
 
