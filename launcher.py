@@ -1,7 +1,3 @@
-"""
-APK Inspector & Verifier - Punto de entrada principal
-"""
-
 import sys
 import os
 from pathlib import Path

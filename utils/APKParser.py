@@ -228,7 +228,8 @@ class APKParser:
                 text=True,
                 encoding='utf-8',
                 errors='ignore',
-                timeout=30
+                timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             output = resultado.stdout
@@ -263,7 +264,8 @@ class APKParser:
                 text=True,
                 encoding='utf-8',
                 errors='ignore',
-                timeout=30
+                timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             return resultado.stdout + resultado.stderr
@@ -289,7 +291,8 @@ class APKParser:
                 text=True,
                 encoding='utf-8',
                 errors='ignore',
-                timeout=30
+                timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             return resultado.stdout + resultado.stderr

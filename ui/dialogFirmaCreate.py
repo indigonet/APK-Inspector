@@ -12,8 +12,8 @@ class FirmaCreateDialog:
         self.config_manager = config_manager
         
         self.dialog = tk.Toplevel(parent)
-        self.dialog.title("Generador de Firma Digital - APK Inspector")
-        self.dialog.geometry("800x800")
+        self.dialog.title("Generador de Firma JKS - ISV Toolkit")
+        self.dialog.geometry("800x850")  # Aumenté un poco la altura
         self.dialog.resizable(True, True)
         
         # Usar styles si está disponible, sino valores por defecto
@@ -74,18 +74,48 @@ class FirmaCreateDialog:
         alias_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5)
         row += 1
         
-        # Contraseña
+        # Contraseña con botón para mostrar
         ttk.Label(main_frame, text="Contraseña:").grid(row=row, column=0, sticky=tk.W, pady=5)
         self.password = tk.StringVar()
-        password_entry = ttk.Entry(main_frame, textvariable=self.password, show="*", width=50)
-        password_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5)
+        password_frame = ttk.Frame(main_frame)
+        password_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        # Entry para contraseña
+        self.password_entry = ttk.Entry(password_frame, textvariable=self.password, show="*", width=45)
+        self.password_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Botón para mostrar/ocultar contraseña
+        self.show_password_btn = ttk.Button(
+            password_frame, 
+            text="👁️", 
+            width=3,
+            command=self.toggle_password_visibility
+        )
+        self.show_password_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        self.password_visible = False
+        
         row += 1
         
-        # Confirmar contraseña
+        # Confirmar contraseña con botón para mostrar
         ttk.Label(main_frame, text="Confirmar Contraseña:").grid(row=row, column=0, sticky=tk.W, pady=5)
         self.confirm_password = tk.StringVar()
-        confirm_entry = ttk.Entry(main_frame, textvariable=self.confirm_password, show="*", width=50)
-        confirm_entry.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5)
+        confirm_frame = ttk.Frame(main_frame)
+        confirm_frame.grid(row=row, column=1, sticky=(tk.W, tk.E), pady=5)
+        
+        # Entry para confirmar contraseña
+        self.confirm_entry = ttk.Entry(confirm_frame, textvariable=self.confirm_password, show="*", width=45)
+        self.confirm_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Botón para mostrar/ocultar confirmación
+        self.show_confirm_btn = ttk.Button(
+            confirm_frame, 
+            text="👁️", 
+            width=3,
+            command=self.toggle_confirm_visibility
+        )
+        self.show_confirm_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        self.confirm_visible = False
+        
         row += 1
         
         # Información del certificado
@@ -146,6 +176,32 @@ class FirmaCreateDialog:
         
         # Configurar pesos para redimensionamiento
         main_frame.rowconfigure(row, weight=1)
+    
+    def toggle_password_visibility(self):
+        """Alternar visibilidad de la contraseña principal"""
+        if self.password_visible:
+            # Ocultar contraseña
+            self.password_entry.config(show="*")
+            self.show_password_btn.config(text="👁️")
+        else:
+            # Mostrar contraseña
+            self.password_entry.config(show="")
+            self.show_password_btn.config(text="🙈")
+        
+        self.password_visible = not self.password_visible
+    
+    def toggle_confirm_visibility(self):
+        """Alternar visibilidad de la confirmación de contraseña"""
+        if self.confirm_visible:
+            # Ocultar confirmación
+            self.confirm_entry.config(show="*")
+            self.show_confirm_btn.config(text="👁️")
+        else:
+            # Mostrar confirmación
+            self.confirm_entry.config(show="")
+            self.show_confirm_btn.config(text="🙈")
+        
+        self.confirm_visible = not self.confirm_visible
         
     def browse_jdk_path(self):
         path = filedialog.askdirectory(title="Seleccionar directorio JDK bin")
@@ -273,7 +329,8 @@ class FirmaCreateDialog:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                encoding='utf-8'
+                encoding='utf-8',
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             # Enviar entradas automáticas y capturar salida
@@ -330,16 +387,16 @@ class FirmaCreateDialog:
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo abrir la carpeta:\n{str(e)}")
 
-    def show_firma_create_dialog(parent):
-        dialog = FirmaCreateDialog(parent)
-        parent.wait_window(dialog.dialog)
+def show_firma_create_dialog(parent):
+    dialog = FirmaCreateDialog(parent)
+    parent.wait_window(dialog.dialog)
 
-    # Ejemplo de uso
-    if __name__ == "__main__":
-        root = tk.Tk()
-        root.withdraw()  # Ocultar ventana principal
-        
-        # Mostrar diálogo
-        show_firma_create_dialog(root)
-        
-        root.mainloop()
+# Ejemplo de uso
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.withdraw()  # Ocultar ventana principal
+    
+    # Mostrar diálogo
+    show_firma_create_dialog(root)
+    
+    root.mainloop()

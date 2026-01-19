@@ -1,12 +1,11 @@
 """
-Módulo de control de versiones para APK Inspector
+Módulo de control de versiones para ISV Toolkit
 """
 
-__version__ = "1.2.0"
-__version_code__ = "28102025"
-__release_date__ = "28/10/2025"
+__version__ = "1.2.4"
+__release_date__ = "14/01/2026"
 __author__ = "Matias Peñaloza"
-__app_name__ = "APK Inspector"
+__app_name__ = "ISV Toolkit"
 
 def get_version_info():
     """
@@ -14,7 +13,6 @@ def get_version_info():
     """
     return {
         "version": __version__,
-        "version_code": __version_code__,
         "release_date": __release_date__,
         "author": __author__,
         "app_name": __app_name__
@@ -24,7 +22,7 @@ def get_version_string():
     """
     Retorna string formateado de la versión
     """
-    return f"{__app_name__} v{__version__} (Build {__version_code__})"
+    return f"{__app_name__} v{__version__}"
 
 def get_short_version():
     """

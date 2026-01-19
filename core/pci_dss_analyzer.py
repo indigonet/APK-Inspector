@@ -390,7 +390,6 @@ class PCIDSSAnalyzer:
     
     def generar_reporte_pci(self, resultados: Dict) -> str:
         """Generar reporte legible de PCI DSS"""
-        reporte = "=== ANÁLISIS PCI DSS ===\n\n"
         
         # Resumen ejecutivo
         reporte += f"Estado de Cumplimiento: {resultados['cumplimiento_general']}\n"

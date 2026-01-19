@@ -70,9 +70,16 @@ class APKLogger:
         """Loggear advertencia"""
         self.logger.warning(mensaje)
     
-    def log_warning(self, mensaje: str):
-        """Loggear warning (alias para compatibilidad)"""
-        self.log_advertencia(mensaje)
+    def log_warning(self, mensaje: str, *args, **kwargs):
+        """Loggear warning (alias compatible con logging estándar)"""
+        try:
+            if args:
+                mensaje = f"{mensaje} | Extra: {args}"
+            self.log_advertencia(mensaje)
+        except Exception:
+            # fallback por si algo muy raro pasa
+            self.logger.warning(str(mensaje))
+
     
     def log_info(self, mensaje: str):
         """Loggear información"""

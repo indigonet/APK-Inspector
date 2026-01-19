@@ -1,7 +1,3 @@
-"""
-Componentes de UI para APK Inspector & Verifier
-"""
-
 from .components import BotonRedondeado, PanelDeslizante, AppStyles
 from .dialogs import ToolsDialog, LogDialog
 from .signing_dialog import SigningDialog

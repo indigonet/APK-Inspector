@@ -208,9 +208,7 @@ class LogDialog:
             if isinstance(pci_analysis, dict):
                 # Verificar si PCI DSS ya está en el contenido
                 if "ANÁLISIS PCI DSS" not in contenido_completo:
-                    contenido_completo += "═" * 80 + "\n"
-                    contenido_completo += "=== ANÁLISIS PCI DSS COMPLETO ===\n"
-                    contenido_completo += "═" * 80 + "\n\n"
+                   
                     
                     if 'reporte_completo' in pci_analysis:
                         contenido_completo += pci_analysis['reporte_completo']
@@ -282,12 +280,12 @@ class LogDialog:
 
     def _obtener_analisis_pci_dss(self):
         if not self.current_analysis:
-            return "=== ANÁLISIS PCI DSS ===\n\nNo hay análisis disponible"
+            return "\n\nNo hay análisis disponible"
         
         pci_analysis = self.current_analysis.get('pci_analysis')
         
         if not pci_analysis:
-            return "=== ANÁLISIS PCI DSS ===\n\nNo se realizó análisis PCI DSS"
+            return "\n\nNo se realizó análisis PCI DSS"
         if isinstance(pci_analysis, dict):
             if 'reporte_completo' in pci_analysis:
                 return f"=== ANÁLISIS PCI DSS COMPLETO ===\n\n{pci_analysis['reporte_completo']}"
@@ -576,7 +574,8 @@ class InstallDialog:
                 [str(adb_path), "devices"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             lines = result.stdout.strip().split('\n')[1:]
@@ -637,7 +636,7 @@ class InstallDialog:
                     [str(adb_path), "install", "-r", str(self.apk_path)],
                     capture_output=True,
                     text=True,
-                    timeout=60
+                    creationflags=subprocess.CREATE_NO_WINDOW
                 )
                 
                 progress.destroy()
@@ -713,7 +712,7 @@ class InstallDialog:
                     [str(adb_path), "uninstall", package_name],
                     capture_output=True,
                     text=True,
-                    timeout=30
+                    creationflags=subprocess.CREATE_NO_WINDOW
                 )
                 
                 progress.destroy()

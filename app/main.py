@@ -3,6 +3,36 @@ from tkinter import scrolledtext, messagebox, ttk
 import threading
 import sys
 from pathlib import Path
+import pystray
+from PIL import Image
+import threading
+import sys
+
+def crear_tray_icon(root):
+    print("Tray iniciado")
+
+    from pathlib import Path
+
+    icon_path = Path(__file__).parent / "assets" / "LOGOAPP.ico"
+    image = Image.open(icon_path)
+
+    def mostrar():
+        root.after(0, root.deiconify)
+
+    def salir():
+        icon.stop()
+        root.after(0, root.destroy)
+        sys.exit(0)
+
+    menu = pystray.Menu(
+        pystray.MenuItem("Mostrar ISV Toolkit", mostrar),
+        pystray.MenuItem("Salir", salir)
+    )
+
+    icon = pystray.Icon("ISVToolkit", image, "ISV Toolkit", menu)
+
+    # ⚠️ Windows: NO daemon
+    threading.Thread(target=icon.run).start()
 
 current_dir = Path(__file__).parent
 project_root = current_dir.parent
@@ -22,7 +52,8 @@ except ImportError as e:
     except ImportError:
         print("No se pudieron cargar los módulos necesarios")
         sys.exit(1)
-        # En las importaciones al inicio
+
+# En las importaciones al inicio
 try:
     from app.tool_manager import ToolManager
     from app.scrcpy_manager import ScrcpyManager
@@ -37,7 +68,7 @@ except ImportError as e:
 
 
 class APKInspectorApp:
-    def __init__(self, root, loading_screen=None):
+    def __init__(self, root, loading_screen):
         self.root = root
         self.loading_screen = loading_screen
         self.tool_manager = ToolManager()
@@ -97,8 +128,8 @@ class APKInspectorApp:
                 from core.apk_analyzer import APKAnalyzer
                 self.apk_analyzer = APKAnalyzer(self.tool_detector, self.logger)
                 self.components['apk_analyzer'] = self.apk_analyzer
-
-            # NUEVO: Inicializar LogcatManager con config_manager
+            
+            # ✅ AQUÍ COMIENZA EL TRY CORRECTO PARA LOGCAT MANAGER
             try:
                 from core.logcat import LogcatManager
                 self.logcat_manager = LogcatManager(
@@ -110,6 +141,43 @@ class APKInspectorApp:
                     self.config_manager  
                 )
                 self.logcat_manager.set_components(self.components)
+                
+                # ✅ Configurar cierre seguro
+                self.logcat_manager.iniciar_protocolo_cierre()
+                
+                def verificar_conexion_inicial():
+                    """Verificar si hay dispositivo conectado al iniciar la aplicación"""
+                    import time
+                    
+                    # Esperar un momento para que todo se inicie
+                    time.sleep(1.5)
+                    
+                    # Verificar ADB
+                    result = self.logcat_manager._ejecutar_adb("devices")
+                    if result and result.returncode == 0:
+                        lines = result.stdout.strip().split('\n')
+                        devices = [line for line in lines[1:] if line.strip() and '\tdevice' in line]
+                        
+                        if devices:
+                            self.logger.log_info(f"✅ Dispositivo(s) detectado(s) al inicio: {len(devices)}")
+                            
+                            # Cargar packages automáticamente
+                            self.logcat_manager._cargar_packages_automatico()
+                            
+                            # Mostrar notificación si tienes status_bar
+                            if hasattr(self, 'status_bar') and self.status_bar:
+                                try:
+                                    self.status_bar.actualizar_texto(
+                                        f"✅ {len(devices)} dispositivo(s) Android conectado(s)",
+                                        "success"
+                                    )
+                                except:
+                                    pass  # Si falla, continuar sin problema
+                
+                # Iniciar verificación en segundo plano
+                import threading
+                threading.Thread(target=verificar_conexion_inicial, daemon=True).start()
+                
             except ImportError as e:
                 self.logger.log_warning("No se pudo cargar LogcatManager", e)
                 self.logcat_manager = None
@@ -210,7 +278,7 @@ class APKInspectorApp:
                 logo_label = tk.Label(header_frame, image=self.logo_img, bg=self.styles.COLORS['primary_bg'])
                 logo_label.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 15))
         except Exception:
-            logo_label = tk.Label(header_frame, text="APK Inspector", font=("Segoe UI", 10, "bold"),
+            logo_label = tk.Label(header_frame, text="ISV Toolkit", font=("Segoe UI", 10, "bold"),
                                   bg=self.styles.COLORS['primary_bg'], fg=self.styles.COLORS['accent'])
             logo_label.grid(row=0, column=0, rowspan=2, sticky="w", padx=(0, 15))
 
@@ -331,7 +399,6 @@ class APKInspectorApp:
         )
         self.btn_scrcpy.pack(side="left", padx=3)
 
-        # NUEVO: Botón Logcat
         self.btn_logcat = BotonRedondeado(
             right_btn_frame,
             "🐈 Logcat",
@@ -419,7 +486,6 @@ class APKInspectorApp:
     def mostrar_logcat(self):
         """Mostrar ventana de Logcat"""
         try:
-            # Importar y crear instancia de LogcatManager
             from core.logcat import LogcatManager
             
             logcat_manager = LogcatManager(
@@ -812,7 +878,6 @@ class APKInspectorApp:
 {info['app_name']}
 
 Versión: {info['version']}
-Build: {info['version_code']}
 Fecha: {info['release_date']}
 Desarrollado por: {info['author']}
 
@@ -859,8 +924,8 @@ def main():
         app = APKInspectorApp(root, loading_screen)
 
         def on_closing():
-            root.destroy()
-            sys.exit(0)
+            root.withdraw()  # Oculta la ventana
+
 
         root.protocol("WM_DELETE_WINDOW", on_closing)
         root.mainloop()
@@ -873,7 +938,6 @@ def main():
             logger.log_error("Error crítico iniciando aplicación", e)
         except:
             pass
-
 
 if __name__ == "__main__":
     main()

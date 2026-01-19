@@ -44,70 +44,210 @@ class FormatUtils:
     }
 
     @staticmethod
-    def crear_mensaje_estado_herramientas(estado_herramientas: Dict) -> str:
-        """Crear mensaje de estado de herramientas con links de descarga"""
-        contenido = "\n" + "═" * 45 + "\n"
-        contenido += "🧰 ESTADO DE HERRAMIENTAS\n"
-        contenido += "═" * 45 + "\n"
 
+    
+    def crear_mensaje_estado_herramientas(estado_herramientas: Dict) -> str:
+        """Crear mensaje de estado de herramientas con emojis y formato mejorado"""
+        # Constantes de formato
+        SEPARADOR_ANCHO = 50
+        SEPARADOR_FUERTE = "═" * SEPARADOR_ANCHO
+        SEPARADOR_SUAVE = "─" * SEPARADOR_ANCHO
+        
+        # Emojis y símbolos modernos
+        EMOJIS = {
+            "titulo": "⚙️",
+            "instalado": "✅",
+            "no_instalado": "❌",
+            "link": "🔗",
+            "ubicacion": "📁",
+            "descarga": "📥",
+            "detalle": "📋",
+            "disponible": "✓",
+            "info": "💡",
+            "herramienta": "🛠️"
+        }
+        
+        # Construir mensaje
+        lineas = []
+        
+        # Encabezado
+        lineas.append(f"\n{SEPARADOR_FUERTE}")
+        lineas.append(f"{EMOJIS['titulo']}  ESTADO DE HERRAMIENTAS  {EMOJIS['herramienta']}")
+        lineas.append(f"{SEPARADOR_FUERTE}")
+        
         herramientas_faltantes = []
         
+        # Procesar cada herramienta
         for herramienta, info in estado_herramientas.items():
+            nombre_formateado = herramienta.replace('_', ' ').title()
+            
             if info["instalado"]:
                 ruta_corta = FormatUtils._acortar_ruta(info["ruta"])
-                contenido += f"✅ {herramienta.replace('_', ' ').title()}: {ruta_corta}\n"
-
+                lineas.append(f"{EMOJIS['instalado']} {nombre_formateado}")
+                lineas.append(f"   {EMOJIS['ubicacion']} {ruta_corta}")
+                
+                # Sub-herramientas
+                sub_herramientas = []
+                
                 if herramienta == "platform_tools" and info["adb"]:
-                    contenido += "   └─ ADB: Disponible\n"
-                elif herramienta == "build_tools":
+                    sub_herramientas.append("ADB")
+                if herramienta == "build_tools":
                     if info["aapt"]:
-                        contenido += "   └─ AAPT: Disponible\n"
+                        sub_herramientas.append("AAPT")
                     if info["apksigner"]:
-                        contenido += "   └─ APKSigner: Disponible\n"
-                elif herramienta == "jdk" and info["jarsigner"]:
-                    contenido += "   └─ JarSigner: Disponible\n"
+                        sub_herramientas.append("APKSigner")
+                if herramienta == "jdk" and info["jarsigner"]:
+                    sub_herramientas.append("JarSigner")
+                
+                if sub_herramientas:
+                    lineas.append(f"   {EMOJIS['detalle']} " + 
+                                ", ".join(f"{EMOJIS['disponible']} {tool}" for tool in sub_herramientas))
             else:
-                contenido += f"❌ {herramienta.replace('_', ' ').title()}: No detectado\n"
+                lineas.append(f"{EMOJIS['no_instalado']} {nombre_formateado}")
+                lineas.append(f"   ⚠️  No detectado")
                 herramientas_faltantes.append(herramienta)
-
-        # Mostrar links de descarga si faltan herramientas
+            
+            lineas.append("")  # Espacio entre herramientas
+        
+        # Links de descarga si faltan herramientas
         if herramientas_faltantes:
-            contenido += "\n" + "─" * 45 + "\n"
-            contenido += "📥 HERRAMIENTAS FALTANTES - LINKS DE DESCARGA\n"
-            contenido += "─" * 45 + "\n"
+            lineas.append(f"{SEPARADOR_SUAVE}")
+            lineas.append(f"{EMOJIS['descarga']}  HERRAMIENTAS FALTANTES")
+            lineas.append(f"{SEPARADOR_SUAVE}")
             
             for herramienta in herramientas_faltantes:
                 if herramienta in FormatUtils.HERRAMIENTAS_DESCARGAS:
                     info_descarga = FormatUtils.HERRAMIENTAS_DESCARGAS[herramienta]
-                    contenido += f"🔗 {info_descarga['nombre']}:\n"
-                    contenido += f"   📍 {info_descarga['url']}\n"
-                    contenido += f"   📝 {info_descarga['descripcion']}\n\n"
+                    
+                    lineas.append(f"{EMOJIS['link']} {info_descarga['nombre']}")
+                    lineas.append(f"   📍 URL: {info_descarga['url']}")
+                    lineas.append(f"   📝 {info_descarga['descripcion']}")
+                    
+                    # Añadir consejo específico si existe
+                    if "consejo" in info_descarga:
+                        lineas.append(f"   {EMOJIS['info']} {info_descarga['consejo']}")
+                    
+                    lineas.append("")  # Espacio entre descargas
+        
+        # Footer con instrucciones
+        if herramientas_faltantes:
+            lineas.append(f"{SEPARADOR_SUAVE}")
+            lineas.append(f"{EMOJIS['info']}  INSTRUCCIONES DE INSTALACIÓN")
+            lineas.append(f"{SEPARADOR_SUAVE}")
+            
+            instrucciones = [
+                "1. 📥 Descarga las herramientas faltantes desde los links anteriores",
+                "2. 🛠️  Instala siguiendo los pasos del instalador",
+                "3. ⚙️  Añade las rutas de instalación al PATH del sistema",
+                "4. 🔄 Reinicia la aplicación y el sistema operativo si es necesario",
+                "5. ✅ Verifica que las herramientas sean detectadas correctamente"
+            ]
+            
+            lineas.extend(instrucciones)
+            lineas.append("")
+        
+        return "\n".join(lineas)
 
-        return contenido
 
     @staticmethod
     def obtener_links_descarga_herramientas(herramientas_faltantes: List[str]) -> str:
-        """Obtener solo los links de descarga para herramientas específicas"""
+        """Obtener lista formateada de links de descarga para herramientas específicas"""
         if not herramientas_faltantes:
             return "✅ Todas las herramientas están instaladas correctamente."
         
-        contenido = "\n" + "📥 LINKS DE DESCARGA PARA HERRAMIENTAS FALTANTES:\n"
-        contenido += "─" * 50 + "\n\n"
+        # Constantes de formato
+        ANCHO = 55
+        SEPARADOR = "─" * ANCHO
+        EMOJIS = {
+            "titulo": "📦",
+            "link": "🔗",
+            "info": "💡",
+            "paso": "🔸",
+            "herramienta": "⚙️",
+            "advertencia": "⚠️"
+        }
         
+        # Construir mensaje
+        lineas = []
+        
+        # Encabezado
+        lineas.append(f"\n{SEPARADOR}")
+        lineas.append(f"{EMOJIS['titulo']}  LINKS DE DESCARGA  {EMOJIS['herramienta']}")
+        lineas.append(f"{SEPARADOR}\n")
+        
+        # Links por herramienta
         for herramienta in herramientas_faltantes:
             if herramienta in FormatUtils.HERRAMIENTAS_DESCARGAS:
-                info_descarga = FormatUtils.HERRAMIENTAS_DESCARGAS[herramienta]
-                contenido += f"🔧 {info_descarga['nombre']}:\n"
-                contenido += f"   🔗 {info_descarga['url']}\n"
-                contenido += f"   💡 {info_descarga['descripcion']}\n\n"
+                info = FormatUtils.HERRAMIENTAS_DESCARGAS[herramienta]
+                
+                # Tarjeta de herramienta
+                lineas.append(f"🛠️  {info['nombre']}")
+                lineas.append(f"{EMOJIS['link']}  {info['url']}")
+                lineas.append(f"{EMOJIS['info']}  {info['descripcion']}")
+                
+                # Información adicional si existe
+                if "version_recomendada" in info:
+                    lineas.append(f"📌 Versión recomendada: {info['version_recomendada']}")
+                if "sistema_operativo" in info:
+                    lineas.append(f"💻 Compatible con: {info['sistema_operativo']}")
+                if "notas_instalacion" in info:
+                    lineas.append(f"📝 Notas: {info['notas_instalacion']}")
+                
+                lineas.append("")  # Espacio entre herramientas
         
-        contenido += "💡 Instrucciones:\n"
-        contenido += "   1. Descarga e instala las herramientas faltantes\n"
-        contenido += "   2. Asegúrate de agregarlas al PATH del sistema\n"
-        contenido += "   3. Reinicia la aplicación después de la instalación\n"
+        # Instrucciones generales
+        lineas.append(f"{SEPARADOR}")
+        lineas.append(f"{EMOJIS['info']}  GUÍA RÁPIDA DE INSTALACIÓN")
+        lineas.append(f"{SEPARADOR}")
         
-        return contenido
+        pasos = [
+            f"{EMOJIS['paso']} Descarga los instaladores desde los links anteriores",
+            f"{EMOJIS['paso']} Ejecuta cada instalador como administrador",
+            f"{EMOJIS['paso']} Durante la instalación, selecciona 'Add to PATH' si está disponible",
+            f"{EMOJIS['paso']} Para JDK, configura la variable de entorno JAVA_HOME",
+            f"{EMOJIS['paso']} Reinicia tu terminal/consola después de cada instalación",
+            f"{EMOJIS['paso']} Verifica con: adb --version, java -version, etc."
+        ]
+        
+        lineas.extend(pasos)
+        lineas.append("")
+        
+        # Advertencia importante
+        lineas.append(f"{EMOJIS['advertencia']}  IMPORTANTE")
+        lineas.append(f"{EMOJIS['advertencia']}  Después de instalar, cierra completamente esta aplicación")
+        lineas.append(f"{EMOJIS['advertencia']}  y ábrela nuevamente para que detecte las herramientas.")
+        
+        return "\n".join(lineas)
 
+
+    # Sugerencia: Añadir estos datos mejorados a HERRAMIENTAS_DESCARGAS
+    HERRAMIENTAS_DESCARGAS_MEJORADO = {
+        "platform_tools": {
+            "nombre": "Android SDK Platform-Tools",
+            "url": "https://developer.android.com/studio/releases/platform-tools",
+            "descripcion": "Incluye ADB, Fastboot y otras herramientas esenciales",
+            "version_recomendada": "Más reciente",
+            "sistema_operativo": "Windows, macOS, Linux",
+            "consejo": "Extrae en una ruta sin espacios (ej: C:\\android-tools\\)",
+            "notas_instalacion": "Añade la carpeta 'platform-tools' al PATH del sistema"
+        },
+        "build_tools": {
+            "nombre": "Android SDK Build-Tools",
+            "url": "https://developer.android.com/studio/releases/build-tools",
+            "descripcion": "Incluye AAPT, APKSigner, zipalign y herramientas de compilación",
+            "version_recomendada": "API 33+",
+            "sistema_operativo": "Windows, macOS, Linux",
+            "consejo": "Instala desde Android Studio SDK Manager"
+        },
+        "jdk": {
+            "nombre": "Java Development Kit (JDK)",
+            "url": "https://www.oracle.com/java/technologies/javase-jdk17-downloads.html",
+            "descripcion": "JDK 17+ para firmar APKs con JarSigner",
+            "version_recomendada": "JDK 17 LTS",
+            "sistema_operativo": "Windows, macOS, Linux",
+            "notas_instalacion": "Configura las variables JAVA_HOME y añade bin al PATH"
+        }
+    }
     @staticmethod
     def verificar_herramientas_criticas(estado_herramientas: Dict) -> Dict:
         """Verificar herramientas críticas y retornar estado detallado"""
@@ -130,7 +270,6 @@ class FormatUtils:
             "links_descarga": FormatUtils.obtener_links_descarga_herramientas(herramientas_faltantes)
         }
 
-    # Los demás métodos permanecen igual...
     @staticmethod
     def formatear_resumen_apk(
         parsed_info: Dict,
@@ -139,10 +278,7 @@ class FormatUtils:
         apk_size_mb: float = None,
         pci_analysis: Dict = None
     ) -> str:
-        # ... (el resto del código permanece igual)
         build_mode = FormatUtils._detectar_modo_build_seguro(parsed_info)
-        
-        # ✅ EVALUACIÓN MEJORADA de calidad de información
         es_info_no_confiable = FormatUtils._evaluar_calidad_informacion(parsed_info)
         
         # 🟦 ENCABEZADO PRINCIPAL
@@ -177,7 +313,7 @@ class FormatUtils:
         
         signature_versions = signature_info.get("signature_versions", [])
         if signature_versions == ["v2"]:
-            contenido += "📝 Firma válida: v2 - Firma Predeterminada de Android\n"
+            contenido += "📝 Firma válida: v2 - No Compatible Con Maxstore\n"
         else:
             signature_text = ", ".join(signature_versions) if signature_versions else "No firmado"
             is_valid = signature_info.get("is_valid", False)
@@ -509,7 +645,8 @@ class FormatUtils:
                 text=True,
                 encoding='utf-8',
                 errors='ignore',
-                timeout=30
+                timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             output = resultado.stdout
@@ -846,7 +983,7 @@ class FormatUtils:
 class SingleInstanceApp:
     """Clase para asegurar que solo se ejecute una instancia de la aplicación"""
     
-    def __init__(self, app_name="APKInspector"):
+    def __init__(self, app_name="ISVtoolkit"):
         self.app_name = app_name
         self.socket = None
         self.is_running = False

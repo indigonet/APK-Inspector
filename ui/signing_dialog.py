@@ -94,29 +94,30 @@ class SigningDialog:
         # Contraseña
         password_frame = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
         password_frame.pack(fill="x", pady=(0, 10))
-        
+
+        # Etiqueta mejorada
         tk.Label(
             password_frame,
-            text="Contraseña de Firma:",
+            text="🔐 Contraseña de Firma:",
             font=self.styles.FONTS['normal'],
             bg=self.styles.COLORS['primary_bg'],
             fg=self.styles.COLORS['text_primary']
-        ).pack(anchor="w")
-        
-        # Input de contraseña
+        ).pack(anchor="w", pady=(0, 3))
+
+        # Input de contraseña (inicialmente OCULTA)
         self.password_entry = tk.Entry(
             password_frame,
             font=self.styles.FONTS['normal'],
             width=40,
-            show=""  # Por defecto visible
+            show="•"  # OCULTA por defecto (carácter de bullet)
         )
         self.password_entry.pack(fill="x", pady=(5, 0))
-        
-        # Checkbox para mostrar/ocultar contraseña
-        self.show_password_var = tk.BooleanVar(value=True)
+
+        # Checkbox para mostrar/ocultar contraseña (texto invertido)
+        self.show_password_var = tk.BooleanVar(value=False)  # FALSE por defecto (oculta)
         self.show_password_check = tk.Checkbutton(
             password_frame,
-            text="Ocultar contraseña",
+            text="👁️ ",  # Texto dice "Mostrar"
             variable=self.show_password_var,
             command=self._toggle_password_visibility,
             font=("Segoe UI", 9),
@@ -127,7 +128,18 @@ class SigningDialog:
             activeforeground=self.styles.COLORS['text_primary']
         )
         self.show_password_check.pack(anchor="w", pady=(5, 0))
-        
+
+        # Label informativo
+        self.password_status_label = tk.Label(
+            password_frame,
+            text="🔒 Contraseña oculta por seguridad",
+            font=("Segoe UI", 8),
+            bg=self.styles.COLORS['primary_bg'],
+            fg="#666666",
+            anchor="w"
+        )
+        self.password_status_label.pack(fill="x", pady=(2, 0))
+
         # Información adicional
         info_frame = tk.Frame(main_frame, bg=self.styles.COLORS['primary_bg'])
         info_frame.pack(fill="x", pady=(20, 0))
@@ -186,12 +198,24 @@ class SigningDialog:
             self.jks_entry.config(state='readonly')
     
     def _toggle_password_visibility(self):
-        if self.show_password_var.get():
-            self.password_entry.config(show="•")
-            self.show_password_check.config(text="Mostrar contraseña")
-        else:
+        """Alternar visibilidad de la contraseña basado en checkbox"""
+        if not hasattr(self, 'password_entry'):
+            return
+        
+        if self.show_password_var.get():  # Si checkbox está marcado (True)
+            # Mostrar contraseña
             self.password_entry.config(show="")
-            self.show_password_check.config(text="Ocultar contraseña")
+            self.password_status_label.config(
+                text="⚠️ Contraseña visible - ¡Cuidado!",
+                fg="#ff9800"
+            )
+        else:  # Si checkbox NO está marcado (False)
+            # Ocultar contraseña
+            self.password_entry.config(show="•")
+            self.password_status_label.config(
+                text="✅ Contraseña oculta por seguridad",
+                fg="#4caf50"
+            )
     
     def _encontrar_apksigner(self) -> Optional[Path]:
         build_tools_dir = Path(self.build_tools_path)
@@ -332,7 +356,7 @@ class SigningDialog:
                 comando,
                 capture_output=True,
                 text=True,
-                timeout=120  # 2 minutos timeout
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             self._log(f"Resultado comando: returncode={resultado.returncode}")

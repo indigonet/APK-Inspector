@@ -546,6 +546,7 @@ class APKAnalyzer:
                 timeout=timeout,
                 encoding="utf-8",
                 errors="ignore",
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             return proc.returncode, proc.stdout + proc.stderr

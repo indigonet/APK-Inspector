@@ -13,20 +13,16 @@ def build_exe():
     
     # Configuración de PyInstaller
     args = [
-        'app/main.py',  # Tu archivo principal
-        '--name=APK_Inspector_Pro',
-        '--onefile',
-        '--windowed',  # Cambia a --console si quieres ver la consola
+        'app/main.py',
+        '--name=ISV_Toolkit',
+        '--noconsole',
         '--icon=assets/logoAPP.ico',
         '--add-data=tools;tools',
         '--add-data=assets;assets',
-        '--hidden-import=ui.components',
-        '--hidden-import=ui.dialogs',
-        '--hidden-import=core.apk_analyzer',
-        '--hidden-import=utils.APKParser',
         '--clean',
         '--noconfirm'
     ]
+
     
     print("🚀 Construyendo ejecutable...")
     PyInstaller.__main__.run(args)

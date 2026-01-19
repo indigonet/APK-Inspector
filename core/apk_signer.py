@@ -20,7 +20,7 @@ class APKSigner:
             elif level == "warning":
                 self.logger.log_warning(message)
 
-    def ejecutar_comando(self, comando: List[str], timeout: int = 60) -> Tuple[int, str]:
+    def ejecutar_comando(self, comando: List[str], timeout: int = 10) -> Tuple[int, str]:
         try:
             self._log(f"Ejecutando: {' '.join(comando)}")
             
@@ -30,7 +30,8 @@ class APKSigner:
                 text=True,
                 timeout=timeout,
                 encoding="utf-8",
-                errors="ignore"
+                errors="ignore",
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             output = proc.stdout

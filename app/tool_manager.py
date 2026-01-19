@@ -165,7 +165,7 @@ class ToolManager:
         if self.system != "windows":
             return {"available": False, "error": "JDK portable solo disponible para Windows"}
             
-        jdk_dir = self.tools_dir / "jdk"
+        jdk_dir = self.tools_dir / "Java Development Kit"
         jdk_dir.mkdir(exist_ok=True)
         
         # JDK portable más compacto (OpenJDK 11)

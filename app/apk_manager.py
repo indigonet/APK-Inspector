@@ -35,28 +35,24 @@ class APKManager:
         config = self.services._get_tools_config()
         platform_tools = config.get("platform_tools", "")
 
-        # Agregar opción de diagnóstico
+        # Agregar opción de instalación
         menu.add_command(
             label="Instalar APK en dispositivo",
             command=lambda: self._ejecutar_instalacion(parent, platform_tools, apk_path, apk_name)
         )
 
-        # VERIFICAR SI EL PACKAGE ESTÁ INSTALADO ANTES DE MOSTRAR LA OPCIÓN
+        # OPCIÓN SIMPLIFICADA: Siempre mostrar desinstalación sin verificar
         if package_name:
-            # Verificar si la aplicación está instalada en el dispositivo
-            esta_instalada = self._verificar_aplicacion_instalada(platform_tools, package_name)
-            
-            if esta_instalada:
-                menu.add_command(
-                    label=f"Desinstalar {app_name}",
-                    command=lambda: self._ejecutar_desinstalacion(parent, platform_tools, package_name, app_name)
-                )
-            else:
-                # Opción deshabilitada si no está instalada
-                menu.add_command(
-                    label=f"Desinstalar {app_name} (no instalada)",
-                    state="disabled"
-                )
+            menu.add_command(
+                label=f"Desinstalar {app_name}",
+                command=lambda: self._ejecutar_desinstalacion(parent, platform_tools, package_name, app_name)
+            )
+        else:
+            # Si no hay package name, mostrar opción deshabilitada
+            menu.add_command(
+                label="Desinstalar (paquete no detectado)",
+                state="disabled"
+            )
 
         menu.add_command(
             label="Desinstalar paquete personalizado...",
@@ -87,51 +83,6 @@ class APKManager:
             menu.tk_popup(x, y)
         finally:
             menu.grab_release()
-
-    def _verificar_aplicacion_instalada(self, platform_tools: str, package_name: str) -> bool:
-        """Verificar si una aplicación está instalada en el dispositivo conectado"""
-        try:
-            if not platform_tools:
-                return False
-
-            platform_path = Path(platform_tools)
-            adb_path = platform_path / "adb.exe"
-            if not adb_path.exists():
-                adb_path = platform_path / "adb"
-            if not adb_path.exists():
-                return False
-
-            # Verificar dispositivos conectados
-            success, devices = self.services.get_connected_devices(platform_tools)
-            if not success or not devices:
-                return False
-
-            dispositivo = devices[0] if devices else None
-
-            # Comando para verificar si el paquete está instalado
-            comando = [str(adb_path)]
-            if dispositivo and dispositivo != "unknown":
-                comando.extend(["-s", dispositivo])
-            
-            comando.extend(["shell", "pm", "list", "packages", package_name])
-            
-            result = subprocess.run(
-                comando,
-                capture_output=True,
-                text=True,
-                timeout=10,
-                cwd=str(platform_path)
-            )
-            
-            # Si encuentra el paquete en la lista, está instalado
-            if result.returncode == 0 and package_name in result.stdout:
-                return True
-            else:
-                return False
-                
-        except Exception as e:
-            self.logger.log_error(f"Error verificando aplicación instalada: {e}")
-            return False
 
     def _ejecutar_instalacion(self, parent, platform_tools: str, apk_path: Path, apk_name: str):
         """Ejecutar instalación de APK"""
@@ -176,7 +127,6 @@ class APKManager:
 
             def instalar_thread():
                 try:
-                    # EJECUTAR DIRECTAMENTE PARA DEBUG
                     success, output = self._ejecutar_instalacion_directa(platform_tools, apk_path, dispositivo)
                     parent.after(0, lambda: self._procesar_resultado_instalacion(
                         progress_dialog, success, output, dispositivo_info, apk_name))
@@ -208,13 +158,13 @@ class APKManager:
             
             # Ejecutar desde el directorio de platform-tools
             result = subprocess.run(
-                comando,
-                capture_output=True,
-                text=True,
-                timeout=60,  # Timeout más largo para instalación
-                cwd=str(platform_path)
-            )
-            
+            comando,
+            capture_output=True,
+            text=True,
+            cwd=str(platform_path),
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+                    
             self.logger.log_info(f"Resultado ADB instalación - stdout: {result.stdout}, stderr: {result.stderr}, returncode: {result.returncode}")
             
             if result.returncode == 0:
@@ -234,7 +184,7 @@ class APKManager:
     def _ejecutar_diagnostico(self, parent, platform_tools: str):
         """Ejecutar diagnóstico de ADB"""
         diagnostico = []
-        
+
         # 1. Verificar si platform_tools está configurado
         if not platform_tools:
             diagnostico.append("❌ Platform-tools no configurado")
@@ -249,62 +199,90 @@ class APKManager:
             diagnostico.append(f"❌ La ruta no existe: {platform_tools}")
             self._mostrar_diagnostico(parent, diagnostico)
             return
-        diagnostico.append("✅ La ruta existe")
         
+        diagnostico.append("✅ La ruta existe")
+
         # 3. Buscar adb.exe
         adb_path = platform_path / "adb.exe"
         if not adb_path.exists():
             adb_path = platform_path / "adb"
-            
+        
         if not adb_path.exists():
             diagnostico.append(f"❌ ADB no encontrado en: {platform_tools}")
             self._mostrar_diagnostico(parent, diagnostico)
             return
-            
+
         diagnostico.append(f"✅ ADB encontrado: {adb_path}")
-        
+
         # 4. Verificar que ADB funciona
         try:
             result = subprocess.run(
                 [str(adb_path), "version"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                cwd=str(platform_path),
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             if result.returncode == 0:
-                version_info = result.stdout.split('\n')[0] if result.stdout else "Versión no disponible"
+                version_info = result.stdout.split("\n")[0] if result.stdout else "Versión no disponible"
                 diagnostico.append(f"✅ ADB funciona: {version_info}")
             else:
-                diagnostico.append(f"❌ ADB no funciona: {result.stderr}")
+                diagnostico.append(f"❌ ADB no funciona:\n{result.stderr or result.stdout}")
+        except subprocess.TimeoutExpired:
+            diagnostico.append("⏰ Timeout: ADB tardó demasiado en responder (version)")
         except Exception as e:
-            diagnostico.append(f"❌ Error ejecutando ADB: {str(e)}")
-        
-        # 5. Verificar dispositivos
+            diagnostico.append(f"❌ Error ejecutando ADB: {e}")
+
+        # 5. Verificar dispositivos conectados
         try:
             result = subprocess.run(
                 [str(adb_path), "devices"],
                 capture_output=True,
                 text=True,
-                timeout=10
+                cwd=str(platform_path),
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
-            if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
-                if len(lines) > 1:
-                    devices = [line for line in lines[1:] if line.strip() and 'device' in line]
+
+            if result.returncode != 0:
+                diagnostico.append(f"❌ Error verificando dispositivos:\n{result.stderr or result.stdout}")
+            else:
+                lines = result.stdout.strip().split("\n")
+
+                if len(lines) <= 1:
+                    diagnostico.append("❌ No hay dispositivos conectados")
+                else:
+                    devices = []
+                    for line in lines[1:]:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        # Filtrar correctamente: device, unauthorized, offline
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            serial, status = parts[0], parts[1]
+                            devices.append((serial, status))
+
                     if devices:
-                        diagnostico.append(f"✅ Dispositivos conectados: {len(devices)}")
-                        for device in devices:
-                            diagnostico.append(f"   📱 {device.split()[0]}")
+                        diagnostico.append(f"📱 Dispositivos detectados: {len(devices)}")
+                        for serial, status in devices:
+                            if status == "device":
+                                diagnostico.append(f"   ✅ {serial} (OK)")
+                            elif status == "unauthorized":
+                                diagnostico.append(f"   ⚠️ {serial} (No autorizaste en el dispositivo)")
+                            elif status == "offline":
+                                diagnostico.append(f"   ⚠️ {serial} (Offline / Sin comunicación)")
+                            else:
+                                diagnostico.append(f"   ❓ {serial} (Estado: {status})")
                     else:
                         diagnostico.append("❌ No hay dispositivos conectados")
-                else:
-                    diagnostico.append("❌ No hay dispositivos conectados")
-            else:
-                diagnostico.append(f"❌ Error verificando dispositivos: {result.stderr}")
+        except subprocess.TimeoutExpired:
+            diagnostico.append("⏰ Timeout: ADB tardó demasiado en responder (devices)")
         except Exception as e:
-            diagnostico.append(f"❌ Error verificando dispositivos: {str(e)}")
-        
+            diagnostico.append(f"❌ Error verificando dispositivos: {e}")
+
+        # Mostrar resultados
         self._mostrar_diagnostico(parent, diagnostico)
+
 
     def _mostrar_diagnostico(self, parent, diagnostico: list):
         """Mostrar resultados del diagnóstico"""
@@ -393,7 +371,6 @@ class APKManager:
 
             def desinstalar_thread():
                 try:
-                    # EJECUTAR DIRECTAMENTE PARA DEBUG
                     success, output = self._ejecutar_desinstalacion_directa(platform_tools, package_name, dispositivo)
                     parent.after(0, lambda: self._procesar_resultado_desinstalacion(
                         progress_dialog, success, output, app_name, package_name))
@@ -428,8 +405,8 @@ class APKManager:
                 comando,
                 capture_output=True,
                 text=True,
-                timeout=30,
-                cwd=str(platform_path)
+                cwd=str(platform_path),
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             self.logger.log_info(f"Resultado ADB - stdout: {result.stdout}, stderr: {result.stderr}, returncode: {result.returncode}")
@@ -644,24 +621,20 @@ class APKManager:
         package_entry.pack(fill="x")
         package_entry.focus_set()
 
-        # ✅ SOLO PLACEHOLDER - SIN REEMPLAZAR CON EL PACKAGE ACTUAL
         placeholder_text = "Ejemplo: com.example.miapp"
         package_entry.insert(0, placeholder_text)
-        package_entry.config(fg=self.styles.COLORS['text_secondary'])  # Color gris para placeholder
+        package_entry.config(fg=self.styles.COLORS['text_secondary'])
 
         def on_entry_click(event):
-            """Manejar clic en el entry"""
             if package_entry.get() == placeholder_text:
                 package_entry.delete(0, tk.END)
-                package_entry.config(fg=self.styles.COLORS['text_primary'])  # Color normal
+                package_entry.config(fg=self.styles.COLORS['text_primary'])
 
         def on_focusout(event):
-            """Manejar pérdida de foco"""
             if package_entry.get() == '':
                 package_entry.insert(0, placeholder_text)
                 package_entry.config(fg=self.styles.COLORS['text_secondary'])
 
-        # Vincular eventos
         package_entry.bind('<FocusIn>', on_entry_click)
         package_entry.bind('<FocusOut>', on_focusout)
 
@@ -677,12 +650,10 @@ class APKManager:
 
     def _confirmar_desinstalacion_personalizada(self, dialog, package_name: str, platform_tools: str, parent, placeholder_text: str):
         """Confirmar desinstalación personalizada"""
-        # Verificar que no sea el placeholder o esté vacío
         if not package_name or package_name == placeholder_text:
             messagebox.showwarning("Advertencia", "Ingresa un nombre de paquete válido")
             return
         
-        # Verificar formato básico de package name
         if not self._es_package_name_valido(package_name):
             resultado = messagebox.askyesno(
                 "Confirmar Package Name",
@@ -697,7 +668,6 @@ class APKManager:
 
     def _es_package_name_valido(self, package_name: str) -> bool:
         """Verificar si el package name tiene un formato válido"""
-        # Formato típico: com.ejemplo.app, org.example.app, etc.
         import re
         pattern = r'^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$'
         return bool(re.match(pattern, package_name))
@@ -725,7 +695,9 @@ class APKManager:
         dialog.transient(parent)
         dialog.grab_set()
 
+        dialog.update_idletasks()  
         self._centrar_dialogo(dialog, parent)
+
 
         main_frame = tk.Frame(dialog, bg=self.styles.COLORS['primary_bg'], padx=20, pady=20)
         main_frame.pack(fill="both", expand=True)
@@ -866,8 +838,17 @@ class APKManager:
         self._centrar_dialogo(dialog, parent)
 
     def _centrar_dialogo(self, dialog, parent):
-        """Centrar diálogo en la pantalla"""
         dialog.update_idletasks()
-        x = parent.winfo_x() + (parent.winfo_width() - dialog.winfo_width()) // 2
-        y = parent.winfo_y() + (parent.winfo_height() - dialog.winfo_height()) // 2
-        dialog.geometry(f"+{x}+{y}")
+
+        w = dialog.winfo_width()
+        h = dialog.winfo_height()
+
+        pw = parent.winfo_width()
+        ph = parent.winfo_height()
+        px = parent.winfo_x()
+        py = parent.winfo_y()
+
+        x = px + (pw // 2) - (w // 2)
+        y = py + (ph // 2) - (h // 2)
+
+        dialog.geometry(f"{w}x{h}+{x}+{y}")

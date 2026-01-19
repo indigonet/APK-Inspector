@@ -1,8 +1,3 @@
-"""
-APK Inspector & Verifier - Servicios de la aplicación
-Contiene la lógica de negocio separada de la UI
-"""
-
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox
@@ -130,7 +125,8 @@ class AppServices:
                 [str(jarsigner_path), "-verify", "-verbose", "-certs", str(apk_path)],
                 capture_output=True, 
                 text=True, 
-                timeout=30
+                timeout=30,
+                creationflags=subprocess.CREATE_NO_WINDOW
             )
             
             if result.returncode == 0:

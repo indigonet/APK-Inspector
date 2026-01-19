@@ -88,7 +88,9 @@ class ADBManager:
                 text=True, 
                 timeout=timeout,
                 encoding='utf-8',
-                errors='ignore'
+                errors='ignore',
+                creationflags=subprocess.CREATE_NO_WINDOW
+
             )
             return proc.returncode, proc.stdout + proc.stderr
         except subprocess.TimeoutExpired:

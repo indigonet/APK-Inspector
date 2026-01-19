@@ -1,8 +1,3 @@
-"""
-APK Inspector & Verifier - Inicializador de la aplicación
-Maneja la inicialización de componentes y dependencias
-"""
-
 import sys
 from pathlib import Path
 import threading
@@ -28,7 +23,8 @@ class AppInitializer:
                 self.root.after(0, self._finalize_initialization)
                 
             except Exception as e:
-                self.root.after(0, lambda: self._handle_initialization_error(e))
+                # Capturar 'e' como argumento por defecto de la lambda
+                self.root.after(0, lambda ex=e: self._handle_initialization_error(ex))
         
         threading.Thread(target=initialization_task, daemon=True).start()
     
